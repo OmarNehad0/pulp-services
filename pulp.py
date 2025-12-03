@@ -1012,7 +1012,7 @@ async def post(
     commission="Server commission % (default 20%)",
     support_agent="Optional: Support agent to take part of helper commission"
 )
-async def complete(interaction: Interaction, order_id: int, commission: float = 20, support_agent: discord.Member = None):
+async def complete(interaction: Interaction, order_id: int, commission: float = 20.0, support_agent: discord.Member = None):
     # Permission check
     if not has_permission(interaction.user):
         await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)

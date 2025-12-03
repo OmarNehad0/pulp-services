@@ -861,15 +861,17 @@ def get_next_order_id():
     )
     return counter["seq"]
 
-@bot.tree.command(name="post", description="Post a new order.")
+@bot.tree.command(name="post", description="Post a new order or assign directly to a worker (USD only).")
 @app_commands.describe(
     customer="The customer for the order",
-    value="The value of the order (in $$)",
+    value="The value of the order (in $)",
     deposit_required="The deposit required for the order",
     holder="The holder of the order",
-    channel="The channel to post the order (mention or ID)",
+    channel="The channel to post the order (optional)",
     description="Description of the order",
-    image="Image URL to show at the bottom of the embed"
+    image="Image URL to show at the bottom of the embed",
+    worker="Optional: Assign a worker directly (acts like /set)",
+    pricing_agent="Optional: Pricing agent to take half of the helper commission"
 )
 async def post(
     interaction: discord.Interaction,
@@ -877,213 +879,140 @@ async def post(
     value: float,
     deposit_required: float,
     holder: discord.Member,
-    channel: discord.TextChannel,
     description: str,
-    image: str = None
+    channel: discord.TextChannel = None,
+    image: str = None,
+    worker: discord.Member = None,
+    pricing_agent: discord.Member = None
 ):
     if not has_permission(interaction.user):
         await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
         return
 
-    channel_id = channel.id
     order_id = get_next_order_id()
-    post_channel_id = interaction.channel.id  # Store the channel where /post was used
+    original_channel_id = interaction.channel.id
 
-    # Define role IDs
-    role1_id = 1433500886721757215
-    role2_id = 1208792946401615902
+    # Default channel if not provided
+    if not channel:
+        channel = interaction.guild.get_channel(1433919267711094845)
 
-    # Check if roles exist in the guild
-    role1 = discord.utils.get(interaction.guild.roles, id=role1_id)
-    role2 = discord.utils.get(interaction.guild.roles, id=role2_id)
+    # Format numbers
+    formatted_value = f"{value:,.2f}$"
+    formatted_deposit = f"{deposit_required:,.2f}$"
 
-    # Determine which role to ping
+    # Embed creation
+    embed = discord.Embed(title="New Order", color=discord.Color.from_rgb(139, 0, 0))
+    embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+    embed.set_author(name="💼 Order Posted", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+    embed.description = f"📕 **Description:**\n{description}"
+    embed.add_field(name="💰 Value", value=f"**```{formatted_value}```**", inline=True)
+    embed.add_field(name="💵 Deposit Required", value=f"**```{formatted_deposit}```**", inline=True)
+    embed.add_field(name="🕵️‍♂️ Holder", value=holder.mention, inline=True)
+
+    if image:
+        embed.set_image(url=image)
+    else:
+        embed.set_image(url="https://media.discordapp.net/attachments/1445150831233073223/1445590514127732848/Footer_2.gif")
+
+    embed.set_footer(text=f"Order ID: {order_id}", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+
+    # ----------- If worker is provided → act like /set -----------
+    if worker:
+        skip_deposit = discord.utils.get(worker.roles, id=1434981057962446919) is not None
+
+        if not skip_deposit:
+            wallet_data = get_wallet(str(worker.id))
+            worker_deposit = wallet_data.get("deposit_dollars", 0)
+            if worker_deposit < deposit_required:
+                await interaction.response.send_message(
+                    f"⚠️ {worker.display_name} does not have enough deposit. Required: {formatted_deposit}, Available: {worker_deposit}$",
+                    ephemeral=True
+                )
+                return
+
+        message = await channel.send(embed=embed)
+        message_id = message.id
+
+        orders_collection.insert_one({
+            "_id": order_id,
+            "customer": customer.id,
+            "worker": worker.id,
+            "pricing_agent": pricing_agent.id if pricing_agent else None,
+            "value": value,
+            "deposit_required": deposit_required,
+            "holder": holder.id,
+            "message_id": message_id,
+            "channel_id": channel.id,
+            "original_channel_id": original_channel_id,
+            "description": description,
+            "status": "in_progress",
+            "currency": "$",
+            "posted_by": interaction.user.id
+        })
+
+        # Update wallets
+        update_wallet(str(customer.id), "spent_dollars", deposit_required, "$")
+        if not skip_deposit:
+            update_wallet(str(worker.id), "wallet_dollars", round(deposit_required * 0.85, 2), "$")
+
+        # Give permissions to worker
+        await channel.set_permissions(worker, read_messages=True, send_messages=True)
+
+        await interaction.response.send_message(f"✅ Order assigned directly to {worker.mention}!", ephemeral=True)
+        return
+
+    # ----------- Normal post if no worker assigned -----------
+    role_ping = None
+    role1 = discord.utils.get(interaction.guild.roles, id=1433500886721757215)
+    role2 = discord.utils.get(interaction.guild.roles, id=1208792946401615902)
     if role1:
         role_ping = role1.mention
     elif role2:
         role_ping = role2.mention
-    else:
-        role_ping = None  # No roles found, so no ping
 
-    # Create embed for the order post
-    embed = discord.Embed(
-        title="New Order",
-        color=discord.Color.from_rgb(139, 0, 0)
-    )
-    embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
-    embed.set_author(
-        name="💼 Order Posted",
-        icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120"
-    )
-    embed.description = f"📕 **Description:**\n{description}"
-    embed.add_field(name="💰 Value", value=f"**```${value:,.2f}```**", inline=True)
-    embed.add_field(name="💵 Deposit Required", value=f"**```${deposit_required:,.2f}```**", inline=True)
-    embed.add_field(name="🕵️‍♂️ Holder", value=holder.mention, inline=True)
+    message = await channel.send(f"{role_ping}" if role_ping else None, embed=embed)
+    await message.edit(view=OrderButton(order_id, deposit_required, customer.id, original_channel_id, message.id, channel.id))
 
-    # Add image
-    if image:
-        embed.set_image(url=image)
-    else:
-        embed.set_image(url="https://media.discordapp.net/attachments/1445150831233073223/1445590514127732848/Footer_2.gif?ex=6930e694&is=692f9514&hm=d23318b8712a50f41e96c7d7d1bead229034c3df451c7e478cffd25e5efadf1d&=&width=520&height=72")
-
-    embed.set_footer(
-        text=f"Order ID: {order_id}",
-        icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120"
-    )
-
-    channel_to_post = interaction.guild.get_channel(channel_id)
-    if channel_to_post:
-        # Send message with role ping if available
-        if role_ping:
-            message = await channel_to_post.send(f"{role_ping}", embed=embed)
-        else:
-            message = await channel_to_post.send(embed=embed)
-
-        # Add claim button
-        await message.edit(
-            view=OrderButton(order_id, deposit_required, customer.id, post_channel_id, message.id, channel_id)
-        )
-
-        # Insert order data into database
-        orders_collection.insert_one({
-            "_id": order_id,
-            "customer": customer.id,
-            "worker": None,
-            "value": value,
-            "deposit_required": deposit_required,
-            "holder": holder.id,
-            "message_id": message.id,
-            "channel_id": channel.id,
-            "original_channel_id": post_channel_id,
-            "description": description,
-            "currency": "$",
-            "posted_by": interaction.user.id  # ✅ added this
-        })
-
-        # Confirmation message
-        confirmation_embed = embed.copy()
-        confirmation_embed.title = "✅ Order Posted Successfully"
-        await interaction.channel.send(embed=confirmation_embed)
-
-        await interaction.response.send_message("💵 Order posted successfully in USD!", ephemeral=True)
-        # Log the command
-        await log_command(
-            interaction,
-            "Order Posted",
-            f"Customer: {customer.mention} (`{customer.id}`)\n"
-            f"Value: ${value:,.2f}\n"
-            f"Deposit Required: ${deposit_required:,.2f}\n"
-            f"Holder: {holder.mention} (`{holder.id}`)\n"
-            f"Channel: {channel.mention}\n"
-            f"Description: {description}"
-        )
-    else:
-        await interaction.response.send_message("❌ Invalid channel specified.", ephemeral=True)
-    
-
-@bot.tree.command(name="set", description="Set an order directly with worker (USD only).")
-async def set_order(
-    interaction: Interaction,
-    customer: discord.Member,
-    value: float,
-    deposit_required: int,
-    holder: discord.Member,
-    description: str,
-    worker: discord.Member
-):
-    if not has_permission(interaction.user):
-        await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
-        return
-
-    # العملة ثابتة بالدولار فقط
-    currency_symbol = "$"
-
-    # تنسيق الأرقام
-    formatted_value = f"{value:,}{currency_symbol}"
-    formatted_deposit = f"{deposit_required:,}{currency_symbol}"
-
-    # إنشاء رقم الطلب
-    order_id = get_next_order_id()
-    original_channel_id = interaction.channel.id
-    original_channel = bot.get_channel(original_channel_id)
-
-    # التحقق من إيداع العامل
-    wallet_data = get_wallet(str(worker.id))
-    worker_deposit = wallet_data.get("deposit_dollars", 0)
-
-    if worker_deposit < deposit_required:
-        await interaction.response.send_message(
-            f"⚠️ {worker.display_name} does not have enough deposit to take this job. "
-            f"Required: {deposit_required}{currency_symbol}, Available: {worker_deposit}{currency_symbol}",
-            ephemeral=True
-        )
-        return
-
-    # إنشاء الإيمبد
-    embed = Embed(title="Order Set", color=discord.Color.from_rgb(139, 0, 0))
-    embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
-    embed.set_author(name="🛠️ Order Set", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
-    embed.add_field(name="📕 Description", value=description, inline=False)
-    embed.add_field(name="📌 Customer", value=customer.mention, inline=True)
-    embed.add_field(name="💵 Value", value=f"**```{formatted_value}```**", inline=True)
-    embed.add_field(name="🕵️ Deposit Required", value=f"**```{formatted_deposit}```**", inline=True)
-    embed.add_field(name="💼 Holder", value=holder.mention, inline=True)
-    embed.add_field(name="👷 Worker", value=worker.mention, inline=True)
-    embed.set_image(url="https://media.discordapp.net/attachments/1445150831233073223/1445590514127732848/Footer_2.gif?ex=6930e694&is=692f9514&hm=d23318b8712a50f41e96c7d7d1bead229034c3df451c7e478cffd25e5efadf1d&=&width=520&height=72")
-    embed.set_footer(text=f"Order ID: {order_id}", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
-
-    # إرسال الإيمبد
-    if original_channel:
-        message = await original_channel.send(embed=embed)
-        message_id = message.id
-    else:
-        await interaction.response.send_message("❌ Could not find the current channel.", ephemeral=True)
-        return
-
-    # حفظ الطلب في قاعدة البيانات
     orders_collection.insert_one({
         "_id": order_id,
         "customer": customer.id,
-        "worker": worker.id,
+        "worker": None,
         "value": value,
         "deposit_required": deposit_required,
         "holder": holder.id,
-        "message_id": message_id,
-        "channel_id": original_channel.id,
+        "message_id": message.id,
+        "channel_id": channel.id,
         "original_channel_id": original_channel_id,
         "description": description,
-        "status": "in_progress",
         "currency": "$",
-        "posted_by": interaction.user.id  # ✅ added this
+        "posted_by": interaction.user.id
     })
 
-    # تحديث المحافظ بالدولار فقط
-    update_wallet(str(customer.id), "spent_dollars", deposit_required, "$")
-    update_wallet(str(worker.id), "wallet_dollars", round(deposit_required * 0.85, 2), "$")
+    # Confirmation and log
+    confirmation_embed = embed.copy()
+    confirmation_embed.title = "✅ Order Posted Successfully"
+    await interaction.channel.send(embed=confirmation_embed)
 
-    # تأكيد العملية
-    await interaction.response.send_message(f"✅ Order set with Worker {worker.mention}!", ephemeral=True)
-
+    await interaction.response.send_message("💵 Order posted successfully in USD!", ephemeral=True)
     await log_command(
         interaction,
-        "Order Set",
+        "Order Posted",
         f"Customer: {customer.mention} (`{customer.id}`)\n"
-        f"Worker: {worker.mention} (`{worker.id}`)\n"
         f"Value: {formatted_value}\n"
         f"Deposit Required: {formatted_deposit}\n"
         f"Holder: {holder.mention} (`{holder.id}`)\n"
+        f"Channel: {channel.mention}\n"
         f"Description: {description}"
     )
 
-    # السماح للعامل بالوصول إلى القناة
-    try:
-        await original_channel.set_permissions(worker, read_messages=True, send_messages=True)
-        print(f"Permissions granted to {worker.name} in {original_channel.name}.")
-    except Exception as e:
-        print(f"Failed to set permissions for {worker.name} in {original_channel.name}: {e}")
 
 @bot.tree.command(name="complete", description="Mark an order as completed (USD only).")
-async def complete(interaction: Interaction, order_id: int):
+@app_commands.describe(
+    order_id="Order ID to complete",
+    commission="Server commission % (default 20%)",
+    support_agent="Optional: Support agent to take part of helper commission"
+)
+async def complete(interaction: Interaction, order_id: int, commission: float = 20, support_agent: discord.Member = None):
     # Permission check
     if not has_permission(interaction.user):
         await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
@@ -1096,7 +1025,7 @@ async def complete(interaction: Interaction, order_id: int):
         return
 
     if order.get("status") == "completed":
-        await interaction.response.send_message("⚠️ This order has already been marked as completed.", ephemeral=True)
+        await interaction.response.send_message("⚠️ This order has already been completed.", ephemeral=True)
         return
 
     # ------------ VALUE SANITIZER (USD ONLY) ------------
@@ -1115,49 +1044,65 @@ async def complete(interaction: Interaction, order_id: int):
     # IDs
     customer_id = str(order["customer"])
     worker_id = str(order["worker"])
-    helper_id = str(order.get("posted_by"))  # may be None
+    helper_id = order.get("posted_by")
+    pricing_agent_id = order.get("pricing_agent")
+    support_agent_id = support_agent.id if support_agent else None
 
     # Percentages
-    worker_payment = round(value * 0.80, 2)
-    commission_total = round(value * 0.15, 2)
-    helper_payment = round(value * 0.05, 2)
+    worker_payment = round(value * 0.8, 2)
+    commission_total = round(value * (commission / 100), 2)
 
-    # Update wallets (USD ONLY)
-    update_wallet(customer_id, "spent_dollars", value, "$")           # customer spent
-    update_wallet(worker_id, "wallet_dollars", worker_payment, "$")   # worker
+    # Total extra share = 3%
+    total_extra = value * 0.03
+    split_count = sum([1 if helper_id else 0, 1 if pricing_agent_id else 0, 1 if support_agent else 0])
+    per_person_share = round(total_extra / split_count, 2) if split_count > 0 else 0
+
+    helper_payment = per_person_share if helper_id else 0
+    pricing_payment = per_person_share if pricing_agent_id else 0
+    support_payment = per_person_share if support_agent else 0
+
+    adjusted_commission = round(commission_total - total_extra, 2)
+
+    # Update wallets
+    update_wallet(customer_id, "spent_dollars", value, "$")
+    update_wallet(worker_id, "wallet_dollars", worker_payment, "$")
     if helper_id:
-        update_wallet(helper_id, "wallet_dollars", helper_payment, "$")
+        update_wallet(str(helper_id), "wallet_dollars", helper_payment, "$")
+    if pricing_agent_id:
+        update_wallet(str(pricing_agent_id), "wallet_dollars", pricing_payment, "$")
+    if support_agent:
+        update_wallet(str(support_agent.id), "wallet_dollars", support_payment, "$")
 
-    # Mark order as completed in DB
+    # Mark order as completed
     orders_collection.update_one({"_id": order_id}, {"$set": {"status": "completed"}})
 
     # Assign roles if needed
     guild = interaction.guild
     customer = guild.get_member(int(customer_id))
     if customer:
-        spent_value = value
-        await check_and_assign_roles(customer, 0, spent_value, interaction.client)
+        await check_and_assign_roles(customer, 0, value, interaction.client)
     else:
         print(f"[ERROR] Customer {customer_id} not found in the Discord server.")
 
-    # Send order completion embed in original channel
+    # ---------- Original Channel Embed ----------
     original_channel = bot.get_channel(order["original_channel_id"])
     if original_channel:
         embed = Embed(title="✅ Order Completed", color=discord.Color.from_rgb(139, 0, 0))
-        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
-        embed.set_author(name="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
+        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+        embed.set_author(name="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
         embed.add_field(name="📕 Description", value=order.get("description", "No description provided."), inline=False)
         embed.add_field(name="👷 Worker", value=f"<@{worker_id}>", inline=True)
         embed.add_field(name="📌 Customer", value=f"<@{customer_id}>", inline=True)
         embed.add_field(name="💰 Value", value=f"**{value}$**", inline=True)
         embed.add_field(name="👷‍♂️ Worker Payment", value=f"**{worker_payment}$**", inline=True)
-        embed.add_field(name="🏦 Server Commission", value=f"**{commission_total}$**", inline=True)
-        embed.add_field(name="📬 Helper Reward", value=f"**{helper_payment}$**", inline=True)
-        embed.set_image(url="https://media.discordapp.net/attachments/1445150831233073223/1445590514127732848/Footer_2.gif?ex=6930e694&is=692f9514&hm=d23318b8712a50f41e96c7d7d1bead229034c3df451c7e478cffd25e5efadf1d&=&width=520&height=72")
-        embed.set_footer(text=f"📜 Order ID: {order_id}", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
+        embed.add_field(name="🏦 Server Commission", value=f"**{adjusted_commission}$**", inline=True)
+        total_extra_text = helper_payment + pricing_payment + support_payment
+        embed.add_field(name="📬 Extra Rewards", value=f"**{total_extra_text}$**", inline=True)
+        embed.set_image(url="https://media.discordapp.net/attachments/1445150831233073223/1445590514127732848/Footer_2.gif")
+        embed.set_footer(text=f"📜 Order ID: {order_id}", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
         await original_channel.send(embed=embed)
 
-        # Security reminder
+        # ---------- Security Reminder ----------
         security = Embed(
             title="🔒 Security Reminder",
             description=(f"**<@{customer_id}>**\n\n"
@@ -1167,35 +1112,13 @@ async def complete(interaction: Interaction, order_id: int):
                          "• **Change your bank PIN** (Optional)\n"),
             color=discord.Color.gold()
         )
-        security.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
-        security.set_author(name="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
-        security.set_footer(text="Pulp System • Please confirm once done", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
+        security.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+        security.set_author(name="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+        security.set_footer(text="Pulp System • Please confirm once done", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
         security.add_field(name="⚠️ Action Required", value="**This is for your safety. Please confirm here once changed.**", inline=False)
         await original_channel.send(content=f"<@{customer_id}>", embed=security)
 
-        # Feedback embed + buttons
-        class FeedbackView(View):
-            def __init__(self):
-                super().__init__(timeout=None)
-                for stars in range(1, 6):
-                    self.add_item(Button(
-                        label=f"{stars}",
-                        custom_id=str(stars),
-                        emoji="<:Glimmer:1441041235547525120>",
-                        style=discord.ButtonStyle.primary
-                    ))
-                # Sythe button
-                self.add_item(Button(
-                    label="Vouch For Us On Sythe!. (2% CashBack)",
-                    url="https://www.sythe.org/threads/pulp-services-vouch-thread/",
-                    style=discord.ButtonStyle.url,
-                    emoji=discord.PartialEmoji(name="1332330797998280724", id=1445611458208727111)
-                ))
-
-            async def button_callback(self, interaction: Interaction):
-                stars = int(interaction.data["custom_id"])
-                await interaction.response.send_modal(FeedbackModal(stars))
-
+        # ---------- Feedback Embed + Buttons ----------
         class FeedbackModal(Modal):
             def __init__(self, stars):
                 super().__init__(title="Service Feedback")
@@ -1205,7 +1128,6 @@ async def complete(interaction: Interaction, order_id: int):
             async def on_submit(self, interaction: Interaction):
                 review = self.children[0].value
                 stars_text = "<:Glimmer:1441041235547525120>" * self.stars
-
                 embed = Embed(
                     title="🌟 Pulp Vouches! 🌟",
                     color=discord.Color.from_rgb(200, 0, 0),
@@ -1217,15 +1139,30 @@ async def complete(interaction: Interaction, order_id: int):
                     )
                 )
                 embed.set_author(name=f"{interaction.user.name} left a vouch!", icon_url=interaction.user.display_avatar.url)
-                embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
-                embed.set_footer(text="Thank you for your feedback!", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
-
+                embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+                embed.set_footer(text="Thank you for your feedback!", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
                 feedback_channel = bot.get_channel(FEEDBACK_CHANNEL_ID)
                 if feedback_channel:
                     await feedback_channel.send(embed=embed)
                     await interaction.response.send_message("✅ Thank you for your feedback!", ephemeral=True)
                 else:
                     await interaction.response.send_message("⚠️ Feedback channel not found!", ephemeral=True)
+
+        class FeedbackView(View):
+            def __init__(self):
+                super().__init__(timeout=None)
+                for stars in range(1, 6):
+                    self.add_item(Button(label=f"{stars}", custom_id=str(stars), emoji="<:Glimmer:1441041235547525120>", style=discord.ButtonStyle.primary))
+                self.add_item(Button(
+                    label="Vouch For Us On Sythe!. (2% CashBack)",
+                    url="https://www.sythe.org/threads/pulp-services-vouch-thread/",
+                    style=discord.ButtonStyle.url,
+                    emoji=discord.PartialEmoji(name="1332330797998280724", id=1445611458208727111)
+                ))
+
+            async def button_callback(self, interaction: Interaction):
+                stars = int(interaction.data["custom_id"])
+                await interaction.response.send_modal(FeedbackModal(stars))
 
         feedback_embed = Embed(
             title="📝 Vouch For Us!",
@@ -1238,52 +1175,52 @@ async def complete(interaction: Interaction, order_id: int):
                 "Once Selected, You Will Be Asked To Leave A Review."
             )
         )
-        feedback_embed.set_author(name="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
-        feedback_embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
-        feedback_embed.set_footer(text="Pulp Services", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
+        feedback_embed.set_author(name="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+        feedback_embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+        feedback_embed.set_footer(text="Pulp Services", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
 
         view = FeedbackView()
         for button in view.children:
             if isinstance(button, Button):
                 button.callback = view.button_callback
-
         await original_channel.send(embed=feedback_embed, view=view)
 
-    # DM worker confirmation
+    # ---------- DM Worker ----------
     worker = bot.get_user(order["worker"])
     if worker:
         dm_embed = Embed(title="✅ Order Completed", color=discord.Color.from_rgb(139, 0, 0))
-        dm_embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
-        dm_embed.set_author(name="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
         dm_embed.add_field(name="📕 Description", value=order.get("description", "No description provided."), inline=False)
         dm_embed.add_field(name="💰 Value", value=f"**{value}$**", inline=True)
         dm_embed.add_field(name="👷‍♂️ Your Payment", value=f"**{worker_payment}$**", inline=True)
-        dm_embed.set_image(url="https://media.discordapp.net/attachments/1445150831233073223/1445590514127732848/Footer_2.gif?ex=6930e694&is=692f9514&hm=d23318b8712a50f41e96c7d7d1bead229034c3df451c7e478cffd25e5efadf1d&=&width=520&height=72")
-        dm_embed.set_footer(text=f"📜 Order ID: {order_id}", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
+        dm_embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
         try:
             await worker.send(embed=dm_embed)
         except discord.Forbidden:
             print(f"[WARNING] Could not DM worker {worker.id}. DMs may be closed.")
 
-    # Notify the helper in a specific channel
-    helper_id = str(order.get("posted_by", interaction.user.id))
-    helper_channel = bot.get_channel(1445612754533880001)
-    if helper_channel:
-        helper_embed = Embed(title="🎯 Helper Commission Summary", color=discord.Color.gold())
-        helper_embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
-        helper_embed.set_author(name="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
-        helper_embed.add_field(name="📜 Order ID", value=f"`{order_id}`", inline=True)
-        helper_embed.add_field(name="💰 Order Value", value=f"**```{value}$```**", inline=True)
-        helper_embed.add_field(name="🎁 Your Share", value=f"**```{helper_payment}$```**", inline=True)
-        helper_embed.set_footer(text=f"Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
-        try:
-            await helper_channel.send(f"<@{helper_id}>", embed=helper_embed)
-        except Exception as e:
-            print(f"[ERROR] Failed to send helper embed: {e}")
+    # ---------- Helper/Pricing/Support Summary ----------
+    notify_channel = bot.get_channel(1445612754533880001)
+    if notify_channel:
+        for uid, amount, role in [(helper_id, helper_payment, "Helper"),
+                                  (pricing_agent_id, pricing_payment, "Pricing Agent"),
+                                  (support_agent_id, support_payment, "Support Agent")]:
+            if uid and amount > 0:
+                helper_embed = Embed(
+                    title=f"🎯 {role} Commission Summary",
+                    color=discord.Color.gold()
+                )
+                helper_embed.add_field(name="📜 Order ID", value=f"`{order_id}`", inline=True)
+                helper_embed.add_field(name="💰 Order Value", value=f"**```{value}$```**", inline=True)
+                helper_embed.add_field(name="🎁 Your Share", value=f"**```{amount}$```**", inline=True)
+                helper_embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+                helper_embed.set_author(name="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+                helper_embed.set_footer(text="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+                await notify_channel.send(f"<@{uid}>", embed=helper_embed)
 
+    # ---------- Final Response ----------
     await interaction.response.send_message("✅ Order marked as completed successfully!", ephemeral=True)
 
-    # Log command
+    # ---------- Log Command ----------
     await log_command(
         interaction,
         "Order Completed",
@@ -1291,10 +1228,11 @@ async def complete(interaction: Interaction, order_id: int):
         f"👷 **Worker:** <@{worker_id}>\n"
         f"💰 **Value:** ${value:,.2f}\n"
         f"💸 **Worker 80%:** ${worker_payment:,.2f}\n"
-        f"💼 **Commission 15%:** ${commission_total:,.2f}\n"
-        f"🎁 **Helper 5%:** ${helper_payment:,.2f}\n"
+        f"💼 **Commission {commission}%:** ${adjusted_commission:,.2f}\n"
+        f"🎁 **Extra Rewards Total:** ${helper_payment + pricing_payment + support_payment:,.2f}\n"
         f"🧾 **Posted By:** <@{helper_id}>"
     )
+
 
 # 📌 /order_deletion command
 @bot.tree.command(name="order_deletion", description="Delete an order.")

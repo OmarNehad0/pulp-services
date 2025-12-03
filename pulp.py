@@ -359,8 +359,7 @@ async def add_remove_spent(
     )
 
 
-await check_and_assign_roles(customer, value, interaction.client)
-
+async def check_and_assign_roles(user: discord.Member, spent_dollars: float, client):
     """
     Assigns roles based ONLY on dollars spent ($). 
     Thresholds are in pure USD — no M system used at all.
@@ -397,7 +396,6 @@ await check_and_assign_roles(customer, value, interaction.client)
 
         if total_spent >= threshold and role not in user.roles:
             await user.add_roles(role)
-
             embed = discord.Embed(
                 title="🎉 Congratulations!",
                 description=f"{user.mention} has reached **${threshold:,}+** spent and earned a new role!",
@@ -413,15 +411,16 @@ await check_and_assign_roles(customer, value, interaction.client)
 
             embed.set_footer(
                 text="Keep spending to reach new Lifetime Rank! ✨",
-                icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120"
+                icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif"
             )
 
             embed.set_author(
                 name="✅ Pulp System ✅",
-                icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120"
+                icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif"
             )
 
             await congrats_channel.send(embed=embed)
+
 
 
 @bot.tree.command(name="wallet_add_remove", description="Add or remove dollars in a user's wallet (USD only)")
@@ -1081,7 +1080,7 @@ async def complete(interaction: Interaction, order_id: int, commission: float = 
     guild = interaction.guild
     customer = guild.get_member(int(customer_id))
     if customer:
-        await check_and_assign_roles(customer, 0, value, interaction.client)
+        await check_and_assign_roles(customer, value, interaction.client)
     else:
         print(f"[ERROR] Customer {customer_id} not found in the Discord server.")
 

@@ -359,7 +359,7 @@ async def add_remove_spent(
     )
 
 
-async def check_and_assign_roles(user: discord.Member, spent_dollars: float, client):
+await check_and_assign_roles(customer, value, interaction.client):
     """
     Assigns roles based ONLY on dollars spent ($). 
     Thresholds are in pure USD — no M system used at all.

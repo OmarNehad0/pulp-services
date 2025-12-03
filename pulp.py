@@ -791,10 +791,6 @@ async def tip(interaction: discord.Interaction, user: discord.Member, value: int
         pass
 
 
-from discord.ui import View
-from discord import Interaction, ButtonStyle
-from discord.ui import button
-import discord
 
 class OrderButton(View):
     def __init__(self, order_id, deposit_required, customer_id, original_channel_id, message_id, post_channel_id):
@@ -812,7 +808,11 @@ class OrderButton(View):
         if not order:
             await interaction.response.send_message("Order not found!", ephemeral=True)
             return
-
+        # ✅ Prevent same user from applying multiple times
+        existing_applicants = order.get("applicants", [])
+        if interaction.user.id in existing_applicants:
+            await interaction.response.send_message("You have already applied for this order!", ephemeral=True)
+            return
         skip_deposit = discord.utils.get(interaction.user.roles, id=1434981057962446919) is not None
 
         # Only check deposit if required and skip_deposit is False
@@ -828,7 +828,11 @@ class OrderButton(View):
         if order.get("worker"):
             await interaction.response.send_message("This order has already been claimed!", ephemeral=True)
             return
-
+        orders_collection.update_one(
+            {"_id": self.order_id},
+            {"$push": {"applicants": interaction.user.id}},
+            upsert=True
+        )
         # ✅ Get all orders currently in-progress for this applicant
         current_orders = list(orders_collection.find({"worker": interaction.user.id, "status": "in_progress"}))
         if current_orders:
@@ -1268,14 +1272,36 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
 
         # ---------- Feedback Embed + Buttons ----------
         class FeedbackModal(Modal):
-            def __init__(self, stars):
+            def __init__(self, default_stars=5):
                 super().__init__(title="Service Feedback")
-                self.stars = stars
-                self.add_item(TextInput(label="We Appreciate A Detailed Review!", placeholder="Describe your service experience...", required=True))
+                self.stars_input = TextInput(
+                    label="Rating (1–5 ⭐)",
+                    style=TextStyle.short,
+                    default=str(default_stars),
+                    placeholder="1–5 stars",
+                    max_length=1,
+                    required=True
+                )
+                self.review_input = TextInput(
+                    label="We Appreciate A Detailed Review!",
+                    style=TextStyle.paragraph,
+                    placeholder="Describe your service experience...",
+                    required=True,
+                    max_length=500
+                )
+                self.add_item(self.stars_input)
+                self.add_item(self.review_input)
 
             async def on_submit(self, interaction: Interaction):
-                review = self.children[0].value
-                stars_text = "<:Glimmer:1441041235547525120>" * self.stars
+                try:
+                    stars = int(self.stars_input.value)
+                    if stars < 1 or stars > 5:
+                        stars = 5
+                except:
+                    stars = 5
+                stars_text = "<:Glimmer:1441041235547525120>" * stars
+                review = self.review_input.value
+
                 embed = Embed(
                     title="🌟 Pulp Vouches! 🌟",
                     color=discord.Color.from_rgb(200, 0, 0),
@@ -1299,8 +1325,7 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
         class FeedbackView(View):
             def __init__(self):
                 super().__init__(timeout=None)
-                for stars in range(1, 6):
-                    self.add_item(Button(label=f"{stars}", custom_id=str(stars), emoji="<:Glimmer:1441041235547525120>", style=discord.ButtonStyle.primary))
+                self.add_item(Button(label="Rate / Give Feedback ⭐", style=discord.ButtonStyle.primary))
                 self.add_item(Button(
                     label="Vouch For Us On Sythe!. (2% CashBack)",
                     url="https://www.sythe.org/threads/pulp-services-vouch-thread/",
@@ -1308,9 +1333,9 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
                     emoji=discord.PartialEmoji(name="1332330797998280724", id=1445611458208727111)
                 ))
 
-            async def button_callback(self, interaction: Interaction):
-                stars = int(interaction.data["custom_id"])
-                await interaction.response.send_modal(FeedbackModal(stars))
+            @discord.ui.button(label="Rate / Give Feedback ⭐", style=discord.ButtonStyle.primary)
+            async def feedback_button(self, interaction: Interaction, button: Button):
+                await interaction.response.send_modal(FeedbackModal(default_stars=5))
 
         feedback_embed = Embed(
             title="📝 Vouch For Us!",
@@ -1319,7 +1344,7 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
                 "**We Appreciate Your Vouch on [Sythe](https://www.sythe.org/threads/pulp-services-vouch-thread/).**\n"
                 "✨ **Get a +10% Discount** When You Vouch.\n"
                 "**Check Discounts Here.** <#1433917514412462090> \n\n"
-                "**Please select your rating below (1–5 stars).**\n"
+                "**Please select your rating below.**\n"
                 "Once Selected, You Will Be Asked To Leave A Review."
             )
         )
@@ -1328,9 +1353,6 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
         feedback_embed.set_footer(text="Pulp Services", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
 
         view = FeedbackView()
-        for button in view.children:
-            if isinstance(button, Button):
-                button.callback = view.button_callback
         await original_channel.send(embed=feedback_embed, view=view)
 
     # ---------- DM Worker ----------
@@ -1383,6 +1405,7 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
         f"🎁 **Extra Rewards Total:** ${helper_payment + pricing_payment + support_payment:,.2f}\n"
         f"🧾 **Posted By:** <@{helper_id}>"
     )
+
 
 
 # 📌 /order_deletion command

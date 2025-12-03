@@ -315,7 +315,7 @@ def get_wallet(user_id):
             "total_earnings": 0,
             "completed_orders": 0
         }
-        wallet_collection.insert_one(wallet)
+        wallets_collection.insert_one(wallet)
     else:
         # Ensure missing fields are always added
         wallet.setdefault("wallet_dollars", 0)

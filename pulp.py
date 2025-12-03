@@ -305,10 +305,12 @@ async def log_command(interaction: discord.Interaction, command_name: str, detai
 
 # Function to get wallet data (updated to handle both m and $)
 def get_wallet(user_id):
-    wallet = wallets_collection.find_one({"_id": user_id})
+    # Look for existing wallet using "user_id" to match your old records
+    wallet = wallets_collection.find_one({"user_id": user_id})
+    
     if not wallet:
         wallet = {
-            "_id": user_id,
+            "user_id": user_id,
             "wallet_dollars": 0,
             "spent_dollars": 0,
             "deposit_dollars": 0,
@@ -325,6 +327,7 @@ def get_wallet(user_id):
         wallet.setdefault("completed_orders", 0)
 
     return wallet
+
 
 # Function to update wallet in MongoDB
 def update_wallet(user_id, field, value, currency):

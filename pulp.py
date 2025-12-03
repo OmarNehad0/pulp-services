@@ -147,7 +147,7 @@ counters_collection = db["order_counters"]  # New collection to track order ID
 # The fixed orders posting channel
 ORDERS_CHANNEL_ID = 1433919267711094845
 # Allowed roles for commands
-ALLOWED_ROLES = {1433451021736087743, 1434344428767809537, 1433480285688692856}
+ALLOWED_ROLES = {1433451021736087743, 1434344428767809537, 1433480285688692856,1433848962166685778}
 
 def has_permission(user: discord.Member):
     return any(role.id in ALLOWED_ROLES for role in user.roles)
@@ -224,7 +224,7 @@ def update_wallet(user_id, field, value, currency):
 async def wallet(interaction: discord.Interaction, user: discord.Member = None):
     # Define role IDs for special access (e.g., self-only role)
     self_only_roles = {1433500886721757215, 1433497500949413908} 
-    allowed_roles = {1433451021736087743, 1434344428767809537, 1433480285688692856}
+    allowed_roles = {1433451021736087743, 1434344428767809537, 1433480285688692856,1433848962166685778}
 
     # Check if the user has permission
     user_roles = {role.id for role in interaction.user.roles}
@@ -1280,7 +1280,7 @@ async def order_deletion(interaction: Interaction, order_id: int):
 @bot.tree.command(name="view_order", description="View details of an order")
 async def view_order(interaction: discord.Interaction, order_id: int):
     # Required role IDs
-    allowed_roles = {1433451021736087743, 1434344428767809537, 1433480285688692856}
+    allowed_roles = {1433451021736087743, 1434344428767809537, 1433480285688692856,1433848962166685778}
 
     # Check if user has at least one of the required roles
     if not any(role.id in allowed_roles for role in interaction.user.roles):

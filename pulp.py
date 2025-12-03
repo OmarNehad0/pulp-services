@@ -678,6 +678,7 @@ class OrderButton(View):
         if not order:
             await interaction.response.send_message("Order not found!", ephemeral=True)
             return
+
         skip_deposit = discord.utils.get(interaction.user.roles, id=1434981057962446919) is not None
 
         # Only check deposit if deposit_required > 0 and skip_deposit is False
@@ -689,15 +690,10 @@ class OrderButton(View):
                     ephemeral=True
                 )
                 return
+
         if order.get("worker"):
             await interaction.response.send_message("This order has already been claimed!", ephemeral=True)
             return
-
-        user_wallet = get_wallet(str(interaction.user.id))
-        if user_wallet.get("deposit_dollars", 0) < self.deposit_required:
-            await interaction.response.send_message("You do not have enough $ deposit to claim this order!", ephemeral=True)
-            return
-
 
         # ✅ Send application notification and store the message object
         bot_spam_channel = bot.get_channel(1433919298027655218)

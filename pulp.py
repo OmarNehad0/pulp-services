@@ -1208,7 +1208,7 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
     split_count = sum([1 if helper_id else 0, 1 if pricing_agent_id else 0, 1 if support_agent else 0])
     per_person_share = round(total_extra / split_count, 2) if split_count > 0 else 0
 
-    helper_payment = per_person_share if helper_id else 0
+    helper_payment = 0
     pricing_payment = per_person_share if pricing_agent_id else 0
     support_payment = per_person_share if support_agent else 0
 
@@ -1219,8 +1219,6 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
     # Update wallets
     update_wallet(customer_id, "spent_dollars", value, "$")
     update_wallet(worker_id, "wallet_dollars", worker_payment, "$")
-    if helper_id:
-        update_wallet(str(helper_id), "wallet_dollars", helper_payment, "$")
     if pricing_agent_id:
         update_wallet(str(pricing_agent_id), "wallet_dollars", pricing_payment, "$")
     if support_agent:

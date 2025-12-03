@@ -882,8 +882,8 @@ async def post(
     description: str,
     channel: discord.TextChannel = None,
     image: str = None,
-    worker: discord.Member = None,
-    pricing_agent: discord.Member  
+    pricing_agent: discord.Member,
+    worker: discord.Member = None
 ):
     if not has_permission(interaction.user):
         await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)

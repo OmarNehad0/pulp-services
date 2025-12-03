@@ -993,7 +993,8 @@ async def post(
     confirmation_embed.title = "✅ Order Posted Successfully"
     await interaction.channel.send(embed=confirmation_embed)
 
-    await interaction.followup.send("💵 Order posted successfully in USD!", ephemeral=True)
+    await interaction.response.send_message("💵 Order posted successfully in USD!", ephemeral=True)
+
     await log_command(
         interaction,
         "Order Posted",
@@ -1005,6 +1006,7 @@ async def post(
         f"Description: {description}"
     )
 
+FEEDBACK_CHANNEL_ID= 1433532064753389629
 
 @bot.tree.command(name="complete", description="Mark an order as completed (USD only).")
 @app_commands.describe(
@@ -1017,6 +1019,7 @@ async def complete(interaction: Interaction, order_id: int, commission: float = 
     if not has_permission(interaction.user):
         await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
         return
+    await interaction.response.defer(ephemeral=True)
 
     # Fetch order
     order = orders_collection.find_one({"_id": order_id})
@@ -1049,11 +1052,12 @@ async def complete(interaction: Interaction, order_id: int, commission: float = 
     support_agent_id = support_agent.id if support_agent else None
 
     # Percentages
-    worker_payment = round(value * 0.8, 2)
+    # Commission
     commission_total = round(value * (commission / 100), 2)
+    worker_payment = round(value - commission_total, 2)
 
-    # Total extra share = 3%
-    total_extra = value * 0.03
+    # Total extra share (3% of value) distributed among helpers
+    total_extra = round(value * 0.03, 2)
     split_count = sum([1 if helper_id else 0, 1 if pricing_agent_id else 0, 1 if support_agent else 0])
     per_person_share = round(total_extra / split_count, 2) if split_count > 0 else 0
 
@@ -1061,7 +1065,9 @@ async def complete(interaction: Interaction, order_id: int, commission: float = 
     pricing_payment = per_person_share if pricing_agent_id else 0
     support_payment = per_person_share if support_agent else 0
 
+    # Deduct extra shares from commission
     adjusted_commission = round(commission_total - total_extra, 2)
+
 
     # Update wallets
     update_wallet(customer_id, "spent_dollars", value, "$")
@@ -1215,7 +1221,7 @@ async def complete(interaction: Interaction, order_id: int, commission: float = 
                 await notify_channel.send(f"<@{uid}>", embed=helper_embed)
 
     # ---------- Final Response ----------
-    await interaction.response.send_message("✅ Order marked as completed successfully!", ephemeral=True)
+    await interaction.followup.send("✅ Order marked as completed successfully!", ephemeral=True)
 
     # ---------- Log Command ----------
     await log_command(

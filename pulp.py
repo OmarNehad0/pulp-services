@@ -802,7 +802,7 @@ class OrderButton(View):
         self.message_id = message_id
         self.post_channel_id = post_channel_id
 
-    @button(label="Apply For The Job✅", style=ButtonStyle.primary)
+    @Button(label="Apply For The Job✅", style=ButtonStyle.primary)
     async def accept_job(self, interaction: Interaction, button: discord.ui.Button):
         order = orders_collection.find_one({"_id": self.order_id})
         if not order:

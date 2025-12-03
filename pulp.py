@@ -871,7 +871,7 @@ def get_next_order_id():
     description="Description of the order",
     image="Image URL to show at the bottom of the embed",
     worker="Optional: Assign a worker directly (acts like /set)",
-    pricing_agent="Optional: Pricing agent to take half of the helper commission"
+    pricing_agent="Pricing agent to take half of the helper commission"
 )
 async def post(
     interaction: discord.Interaction,
@@ -883,7 +883,7 @@ async def post(
     channel: discord.TextChannel = None,
     image: str = None,
     worker: discord.Member = None,
-    pricing_agent: discord.Member = None
+    pricing_agent: discord.Member  
 ):
     if not has_permission(interaction.user):
         await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
@@ -1094,10 +1094,7 @@ async def complete(interaction: Interaction, order_id: int, commission: float = 
         embed.add_field(name="👷 Worker", value=f"<@{worker_id}>", inline=True)
         embed.add_field(name="📌 Customer", value=f"<@{customer_id}>", inline=True)
         embed.add_field(name="💰 Value", value=f"**{value}$**", inline=True)
-        embed.add_field(name="👷‍♂️ Worker Payment", value=f"**{worker_payment}$**", inline=True)
-        embed.add_field(name="🏦 Server Commission", value=f"**{adjusted_commission}$**", inline=True)
         total_extra_text = helper_payment + pricing_payment + support_payment
-        embed.add_field(name="📬 Extra Rewards", value=f"**{total_extra_text}$**", inline=True)
         embed.set_image(url="https://media.discordapp.net/attachments/1445150831233073223/1445590514127732848/Footer_2.gif")
         embed.set_footer(text=f"📜 Order ID: {order_id}", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
         await original_channel.send(embed=embed)

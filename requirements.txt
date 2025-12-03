@@ -1,0 +1,11 @@
+discord.py
+flask
+aiohttp
+pillow
+selenium
+webdriver-manager
+mozrunner
+playwright
+chromedriver-autoinstaller
+pymongo>=3.12.1
+gspread

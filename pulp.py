@@ -993,7 +993,7 @@ async def post(
     confirmation_embed.title = "✅ Order Posted Successfully"
     await interaction.channel.send(embed=confirmation_embed)
 
-    await interaction.response.send_message("💵 Order posted successfully in USD!", ephemeral=True)
+    await interaction.followup.send("💵 Order posted successfully in USD!", ephemeral=True)
     await log_command(
         interaction,
         "Order Posted",

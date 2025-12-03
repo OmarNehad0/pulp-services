@@ -1158,7 +1158,7 @@ async def post(
     )
 
 FEEDBACK_CHANNEL_ID= 1433532064753389629
-
+from discord import TextStyle
 @bot.tree.command(name="complete", description="Mark an order as completed (USD only).")
 @app_commands.describe(
     order_id="Order ID to complete",
@@ -1209,10 +1209,10 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
 
     # Total extra share (3% of value) distributed among helpers
     total_extra = round(value * 0.03, 2)
-    split_count = sum([1 if helper_id else 0, 1 if pricing_agent_id else 0, 1 if support_agent else 0])
+    split_count = sum([1 if pricing_agent_id else 0, 1 if support_agent else 0])
     per_person_share = round(total_extra / split_count, 2) if split_count > 0 else 0
 
-    helper_payment = 0
+    helper_payment = 0  # helper gets nothing
     pricing_payment = per_person_share if pricing_agent_id else 0
     support_payment = per_person_share if support_agent else 0
 
@@ -1325,7 +1325,6 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
         class FeedbackView(View):
             def __init__(self):
                 super().__init__(timeout=None)
-                self.add_item(Button(label="Rate / Give Feedback ⭐", style=discord.ButtonStyle.primary))
                 self.add_item(Button(
                     label="Vouch For Us On Sythe!. (2% CashBack)",
                     url="https://www.sythe.org/threads/pulp-services-vouch-thread/",

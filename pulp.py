@@ -254,7 +254,7 @@ async def wallet(interaction: discord.Interaction, user: discord.Member = None):
     deposit_dollars = wallet_data.get('deposit_dollars', 0)
 
     # Get user's avatar (fallback to default image)
-    default_thumbnail = "https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120
+    default_thumbnail = "https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120"
 "
     thumbnail_url = user.avatar.url if user.avatar else default_thumbnail
     

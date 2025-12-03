@@ -880,7 +880,7 @@ class ApplicationView(View):
         self.deposit_required = deposit_required  
         self.message_obj = message_obj  # Store the applicant's message object
 
-    @button(label="✅ Accept", style=ButtonStyle.success)
+    @discord.ui.button(label="✅ Accept", style=discord.ButtonStyle.success)
     async def accept_applicant(self, interaction: Interaction, button: discord.ui.Button):
         await interaction.response.defer()
 
@@ -962,7 +962,7 @@ class ApplicationView(View):
 
         await interaction.followup.send("Applicant accepted and added to the order channel!", ephemeral=True)
 
-    @button(label="❌ Reject", style=ButtonStyle.danger)
+    @discord.ui.button(label="❌ Reject", style=discord.ButtonStyle.danger)
     async def reject_applicant(self, interaction: Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         orders_collection.update_one(

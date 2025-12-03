@@ -136,13 +136,13 @@ mongo_uri = os.getenv("MONGO_URI")  # You should set this in your Railway enviro
 client = MongoClient(mongo_uri)
 
 # Choose your database
-db = client['MongoDB']  # Replace with the name of your database
+db = client['MongoDB_pulp_server']  # Replace with the name of your database
 
 # Access collections (equivalent to Firestore collections)
 wallets_collection = db['wallets']
 orders_collection = db['orders']
 counters_collection = db["order_counters"]  # New collection to track order ID
-tos_collection = db["tos_message"]
+
 
 # The fixed orders posting channel
 ORDERS_CHANNEL_ID = 1433919267711094845

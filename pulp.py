@@ -430,11 +430,15 @@ async def check_and_assign_roles(user: discord.Member, spent_dollars: float, cli
         discord.app_commands.Choice(name="Remove", value="remove")
     ]
 )
+@app_commands.describe(
+    notes="Optional reason for adding/removing money (will be logged)"
+)
 async def wallet_add_remove(
     interaction: discord.Interaction,
     user: discord.Member,
     action: str,
-    value: float
+    value: float,
+    notes: str = None  # <-- optional notes argument
 ):
     if not has_permission(interaction.user):
         await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
@@ -462,7 +466,6 @@ async def wallet_add_remove(
 
     # Refresh wallet after update
     updated = get_wallet(user_id)
-
     wallet_dollars = updated.get("wallet_dollars", 0)
     deposit_dollars = updated.get("deposit_dollars", 0)
     spent_dollars = updated.get("spent_dollars", 0)
@@ -474,23 +477,9 @@ async def wallet_add_remove(
 
     embed.set_thumbnail(url=user.avatar.url if user.avatar else user.default_avatar.url)
 
-    embed.add_field(
-        name="Deposit",
-        value=f"```🕵️ ${deposit_dollars:,}```",
-        inline=False
-    )
-
-    embed.add_field(
-        name="Wallet",
-        value=f"```💵 ${wallet_dollars:,}```",
-        inline=False
-    )
-
-    embed.add_field(
-        name="Spent",
-        value=f"```✍️ ${spent_dollars:,}```",
-        inline=False
-    )
+    embed.add_field(name="Deposit", value=f"```🕵️ ${deposit_dollars:,}```", inline=False)
+    embed.add_field(name="Wallet", value=f"```💵 ${wallet_dollars:,}```", inline=False)
+    embed.add_field(name="Spent", value=f"```✍️ ${spent_dollars:,}```", inline=False)
 
     embed.set_footer(
         text=f"Updated by {interaction.user.display_name}",
@@ -506,15 +495,20 @@ async def wallet_add_remove(
         embed=embed
     )
 
-    # Log command
+    # Log command, include notes if provided
+    log_message = f"User: {user.mention} | Action: {action} | Value: ${value:,}"
+    if notes:
+        log_message += f" | Notes: {notes}"
+    
     await log_command(
         interaction,
         "wallet_add_remove",
-        f"User: {user.mention} | Action: {action} | Value: ${value:,}"
+        log_message
     )
 
     # Update rank roles (USD ONLY)
     await check_and_assign_roles(user, spent_dollars, interaction.client)
+
 
 
 
@@ -684,7 +678,17 @@ class OrderButton(View):
         if not order:
             await interaction.response.send_message("Order not found!", ephemeral=True)
             return
+        skip_deposit = discord.utils.get(interaction.user.roles, id=1434981057962446919) is not None
 
+        # Only check deposit if deposit_required > 0 and skip_deposit is False
+        if self.deposit_required > 0 and not skip_deposit:
+            user_wallet = get_wallet(str(interaction.user.id))
+            if user_wallet.get("deposit_dollars", 0) < self.deposit_required:
+                await interaction.response.send_message(
+                    f"You do not have enough $ deposit to claim this order! Required: {self.deposit_required}$",
+                    ephemeral=True
+                )
+                return
         if order.get("worker"):
             await interaction.response.send_message("This order has already been claimed!", ephemeral=True)
             return

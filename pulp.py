@@ -1257,7 +1257,7 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
     worker_member = interaction.guild.get_member(int(worker_id))
     if worker_member and has_extra_options(worker_member):
         update_wallet(worker_id, "total_earnings", worker_payment, "$")
-        update_wallet(worker_id, "completed_orders", 1)
+        update_wallet(worker_id, "completed_orders", 1, "#")
 
     if pricing_agent_id:
         update_wallet(str(pricing_agent_id), "wallet_dollars", pricing_payment, "$")

@@ -876,13 +876,13 @@ def get_next_order_id():
 async def post(
     interaction: discord.Interaction,
     customer: discord.Member,
+    pricing_agent: discord.Member,
     value: float,
     deposit_required: float,
     holder: discord.Member,
     description: str,
     channel: discord.TextChannel = None,
     image: str = None,
-    pricing_agent: discord.Member,
     worker: discord.Member = None
 ):
     if not has_permission(interaction.user):

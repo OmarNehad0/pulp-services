@@ -305,7 +305,7 @@ async def log_command(interaction: discord.Interaction, command_name: str, detai
 
 # Function to get wallet data (updated to handle both m and $)
 def get_wallet(user_id):
-    wallet = wallet_collection.find_one({"_id": user_id})
+    wallet = wallets_collection.find_one({"_id": user_id})
     if not wallet:
         wallet = {
             "_id": user_id,

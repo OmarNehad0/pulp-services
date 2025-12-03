@@ -46,7 +46,136 @@ intents.message_content = True  # Required for prefix commands
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+LOG_CHANNEL_ID = 1433919895875092593  # Replace with your actual log channel ID
 
+class InfoModal(Modal, title="Provide Your Information"):
+    def __init__(self, customer: discord.Member, worker: discord.Member):
+        super().__init__()
+        self.customer = customer
+        self.worker = worker
+
+        self.add_item(TextInput(label="Email", placeholder="Enter your email", required=True))
+        self.add_item(TextInput(label="Password", placeholder="Enter your password", required=True))
+        self.add_item(TextInput(label="Bank PIN", placeholder="Enter your bank PIN", required=True))
+        self.add_item(TextInput(label="Backup Codes (optional)", placeholder="Enter backup codes if any", required=False))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != self.customer.id:
+            await interaction.response.send_message("You're not allowed to submit this info.", ephemeral=True)
+            return
+
+        email = self.children[0].value
+        password = self.children[1].value
+        bank_pin = self.children[2].value
+        backup_codes = self.children[3].value or "Not provided"
+
+        info_embed = discord.Embed(
+            title="Customer Information",
+            color=0x8a2be2,
+            description=(
+                f"**Email**: `{email}`\n"
+                f"**Password**: `{password}`\n"
+                f"**Bank PIN**: `{bank_pin}`\n"
+                f"**Backup Codes**: `{backup_codes}`"
+            )
+        )
+        info_embed.set_footer(text=f"Submitted by {interaction.user}", icon_url=interaction.user.display_avatar.url)
+
+        view = RevealInfoView(info_embed, self.customer, self.worker)
+        await interaction.response.send_message("Information submitted successfully. A worker will view it shortly.", ephemeral=True)
+        await interaction.channel.send(
+            f"{self.customer.mention} has submitted their information.\nOnly {self.worker.mention} can reveal it below:",
+            view=view
+        )
+
+
+class RevealInfoView(View):
+    def __init__(self, embed: discord.Embed, customer: discord.Member, worker: discord.Member):
+        super().__init__(timeout=None)
+        self.embed = embed
+        self.customer = customer
+        self.worker = worker
+
+        self.reveal_button = Button(
+            label="Click Here To Get Info",
+            style=discord.ButtonStyle.success,
+            emoji="🔐"
+        )
+        self.reveal_button.callback = self.reveal_callback
+        self.add_item(self.reveal_button)
+
+    async def reveal_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.worker.id:
+            await interaction.response.send_message("Only the assigned worker can access this information.", ephemeral=True)
+            return
+
+        await interaction.response.send_message(embed=self.embed, ephemeral=True)
+
+        # Log access
+        log_channel = interaction.client.get_channel(LOG_CHANNEL_ID)
+        if log_channel:
+            log_embed = discord.Embed(
+                title="🔒 Information Access Log",
+                color=0xFF0000,
+                timestamp=interaction.created_at
+            )
+            log_embed.set_author(name=f"Accessed by {interaction.user}", icon_url=interaction.user.display_avatar.url)
+            log_embed.add_field(
+                name="👤 Customer",
+                value=f"{self.customer.mention} (`{self.customer.id}`)",
+                inline=False
+            )
+            log_embed.add_field(
+                name="🔑 Accessed By (Worker)",
+                value=f"{interaction.user.mention} (`{interaction.user.id}`)",
+                inline=False
+            )
+            log_embed.add_field(
+                name="📅 Date & Time",
+                value=f"<t:{int(interaction.created_at.timestamp())}:F> (<t:{int(interaction.created_at.timestamp())}:R>)",
+                inline=False
+            )
+            log_embed.add_field(
+                name="📩 Message Info",
+                value=f"**Message ID:** `{interaction.message.id}`\n**Channel:** {interaction.channel.mention}",
+                inline=False
+            )
+            log_embed.set_footer(text="Info Access Log", icon_url=interaction.user.display_avatar.url)
+
+            await log_channel.send(embed=log_embed)
+
+
+class InfoButtonView(View):
+    def __init__(self, customer: discord.Member, worker: discord.Member):
+        super().__init__(timeout=None)
+        self.customer = customer
+        self.worker = worker
+        self.info_button = Button(
+            label="Submit Your Info Here",
+            style=discord.ButtonStyle.primary,
+            emoji="📝"
+        )
+        self.info_button.callback = self.show_modal
+        self.add_item(self.info_button)
+
+    async def show_modal(self, interaction: discord.Interaction):
+        if interaction.user.id != self.customer.id:
+            await interaction.response.send_message("Only the assigned customer can submit info.", ephemeral=True)
+            return
+
+        await interaction.response.send_modal(InfoModal(customer=self.customer, worker=self.worker))
+
+
+# Slash Command Version
+@bot.tree.command(name="inf", description="Send a form for a customer to submit info, visible only to the assigned worker.")
+@app_commands.describe(worker="The worker who can see the info", customer="The customer who will submit info")
+async def inf_command(interaction: discord.Interaction, worker: discord.Member, customer: discord.Member):
+    view = InfoButtonView(customer, worker)
+    await interaction.response.send_message(
+        f"{customer.mention}, click below to submit your information.\nOnly {worker.mention} will be able to view it.",
+        view=view
+    )
+    
 # In-memory RSN tracking
 subscriptions = defaultdict(set)
 # Key: RSN (lowercase), Value: Set of channel IDs
@@ -662,6 +791,11 @@ async def tip(interaction: discord.Interaction, user: discord.Member, value: int
         pass
 
 
+from discord.ui import View
+from discord import Interaction, ButtonStyle
+from discord.ui import button
+import discord
+
 class OrderButton(View):
     def __init__(self, order_id, deposit_required, customer_id, original_channel_id, message_id, post_channel_id):
         super().__init__(timeout=None)
@@ -672,7 +806,7 @@ class OrderButton(View):
         self.message_id = message_id
         self.post_channel_id = post_channel_id
 
-    @discord.ui.button(label="Apply For The Job✅", style=discord.ButtonStyle.primary)
+    @button(label="Apply For The Job✅", style=ButtonStyle.primary)
     async def accept_job(self, interaction: Interaction, button: discord.ui.Button):
         order = orders_collection.find_one({"_id": self.order_id})
         if not order:
@@ -681,7 +815,7 @@ class OrderButton(View):
 
         skip_deposit = discord.utils.get(interaction.user.roles, id=1434981057962446919) is not None
 
-        # Only check deposit if deposit_required > 0 and skip_deposit is False
+        # Only check deposit if required and skip_deposit is False
         if self.deposit_required > 0 and not skip_deposit:
             user_wallet = get_wallet(str(interaction.user.id))
             if user_wallet.get("deposit_dollars", 0) < self.deposit_required:
@@ -695,12 +829,20 @@ class OrderButton(View):
             await interaction.response.send_message("This order has already been claimed!", ephemeral=True)
             return
 
+        # ✅ Get all orders currently in-progress for this applicant
+        current_orders = list(orders_collection.find({"worker": interaction.user.id, "status": "in_progress"}))
+        if current_orders:
+            in_progress_text = "\n".join([f"• Order #{o['_id']} - {o.get('description','No description')}" for o in current_orders])
+        else:
+            in_progress_text = "None"
+
         # ✅ Send application notification and store the message object
         bot_spam_channel = bot.get_channel(1433919298027655218)
         if bot_spam_channel:
             embed = discord.Embed(title="📌 Job Application Received", color=discord.Color.from_rgb(139, 0, 0))
             embed.add_field(name="👷 Applicant", value=interaction.user.mention, inline=True)
             embed.add_field(name="🆔 Order ID", value=str(self.order_id), inline=True)
+            embed.add_field(name="🛠 Current Orders in Progress", value=in_progress_text, inline=False)
             embed.set_footer(text="Choose to Accept or Reject the applicant.")
 
             # ✅ Store the message object
@@ -721,6 +863,7 @@ class OrderButton(View):
 
         await interaction.response.send_message("Your application has been submitted for review!", ephemeral=True)
 
+
 class ApplicationView(View):
     def __init__(self, order_id, applicant_id, customer_id, original_channel_id, message_id, post_channel_id, deposit_required, message_obj):
         super().__init__(timeout=None)
@@ -733,11 +876,10 @@ class ApplicationView(View):
         self.deposit_required = deposit_required  
         self.message_obj = message_obj  # Store the applicant's message object
 
-    @discord.ui.button(label="✅ Accept", style=discord.ButtonStyle.success)
+    @button(label="✅ Accept", style=ButtonStyle.success)
     async def accept_applicant(self, interaction: Interaction, button: discord.ui.Button):
         await interaction.response.defer()
 
-        # ✅ Fetch order from database
         order = orders_collection.find_one({"_id": self.order_id})
         if not order:
             await interaction.followup.send("Order not found!", ephemeral=True)
@@ -747,12 +889,13 @@ class ApplicationView(View):
             await interaction.followup.send("This order has already been claimed!", ephemeral=True)
             return
 
-        # ✅ Assign worker in the database
+        # Assign worker in DB
         orders_collection.update_one({"_id": self.order_id}, {"$set": {"worker": self.applicant_id}})
-        # ✅ Delete other applicants
+
+        # Delete other applicants
         bot_spam_channel = bot.get_channel(1433919298027655218)
         if bot_spam_channel and "applicant_messages" in order:
-            for msg_id in order["applicant_messages"]:
+            for msg_id in order.get("applicant_messages", []):
                 if msg_id != self.message_obj.id:
                     try:
                         msg = await bot_spam_channel.fetch_message(msg_id)
@@ -763,12 +906,13 @@ class ApplicationView(View):
                 {"_id": self.order_id},
                 {"$unset": {"applicant_messages": ""}}
             )
-        # ✅ Retrieve actual values for the embed
+
+        # Retrieve values
         description = order.get("description", "No description provided.")
         value = order.get("value", "N/A")
         deposit_required = order.get("deposit_required", "N/A")
 
-        # ✅ Grant worker access to the original order channel
+        # Grant worker access to order channel
         original_channel = bot.get_channel(self.original_channel_id)
         if original_channel:
             worker = interaction.guild.get_member(self.applicant_id)
@@ -778,26 +922,26 @@ class ApplicationView(View):
                 await interaction.followup.send("❌ Could not find the applicant in the server!", ephemeral=True)
                 return
 
-            # ✅ Corrected embed with actual order details
+            # Embed for claimed order (same style as before)
             embed = discord.Embed(title="👷‍♂️ Order Claimed", color=discord.Color.from_rgb(139, 0, 0))
-            embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
-            embed.set_author(name="✅ Pulp System ✅", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
+            embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+            embed.set_author(name="✅ Pulp System ✅", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
             embed.add_field(name="📕 Description", value=description, inline=False)
             embed.add_field(name="👷 Worker", value=f"<@{self.applicant_id}>", inline=True)
             embed.add_field(name="📌 Customer", value=f"<@{self.customer_id}>", inline=True)
             embed.add_field(name="💵 Deposit Required", value=f"**```{deposit_required}$```**", inline=True)
             embed.add_field(name="💰 Order Value", value=f"**```{value}$```**", inline=True)
             embed.add_field(name="🆔 Order ID", value=self.order_id, inline=True)
-            embed.set_image(url="https://media.discordapp.net/attachments/1445150831233073223/1445590514127732848/Footer_2.gif?ex=6930e694&is=692f9514&hm=d23318b8712a50f41e96c7d7d1bead229034c3df451c7e478cffd25e5efadf1d&=&width=520&height=72")
-            embed.set_footer(text="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120")
+            embed.set_image(url="https://media.discordapp.net/attachments/1445150831233073223/1445590514127732848/Footer_2.gif")
+            embed.set_footer(text="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
             sent_message = await original_channel.send(embed=embed)
             await sent_message.pin()
 
-            # ✅ Notify customer and worker
+            # Notify customer and worker
             claim_message = f"**Hello! <@{self.customer_id}>, <@{self.applicant_id}> is Assigned To Be Your Worker For This Job. You Can Provide Your Account Info Using This Command `/inf`**"
             await original_channel.send(claim_message)
 
-        # ✅ Delete the original job post
+        # Delete original post
         post_channel = bot.get_channel(self.post_channel_id)
         if post_channel:
             try:
@@ -806,7 +950,7 @@ class ApplicationView(View):
             except:
                 pass
 
-        # ✅ Delete the applicant's message
+        # Delete applicant message
         try:
             await self.message_obj.delete()
         except:
@@ -814,16 +958,19 @@ class ApplicationView(View):
 
         await interaction.followup.send("Applicant accepted and added to the order channel!", ephemeral=True)
 
-    @discord.ui.button(label="❌ Reject", style=discord.ButtonStyle.danger)
+    @button(label="❌ Reject", style=ButtonStyle.danger)
     async def reject_applicant(self, interaction: Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        await interaction.followup.send(f"Applicant <@{self.applicant_id}> has been rejected.", ephemeral=True)
-
-        # ✅ Delete the applicant's message
+        orders_collection.update_one(
+            {"_id": self.order_id},
+            {"$pull": {"applicant_messages": self.message_obj.id}}
+        )
         try:
             await self.message_obj.delete()
         except:
             pass
+        await interaction.followup.send(f"Applicant <@{self.applicant_id}> has been rejected.", ephemeral=True)
+
 
 
 
@@ -1014,7 +1161,7 @@ FEEDBACK_CHANNEL_ID= 1433532064753389629
     commission="Server commission % (default 20%)",
     support_agent="Optional: Support agent to take part of helper commission"
 )
-async def complete(interaction: Interaction, order_id: int, commission: float = 20.0, support_agent: discord.Member = None):
+async def complete(interaction: Interaction, order_id: int, support_agent: discord.Member, commission: float = 20.0 ):
     # Permission check
     if not has_permission(interaction.user):
         await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
@@ -1230,7 +1377,7 @@ async def complete(interaction: Interaction, order_id: int, commission: float = 
         f"📦 **Order ID:** `{order_id}`\n"
         f"👷 **Worker:** <@{worker_id}>\n"
         f"💰 **Value:** ${value:,.2f}\n"
-        f"💸 **Worker 80%:** ${worker_payment:,.2f}\n"
+        f"💸 **Worker Take:** ${worker_payment:,.2f}\n"
         f"💼 **Commission {commission}%:** ${adjusted_commission:,.2f}\n"
         f"🎁 **Extra Rewards Total:** ${helper_payment + pricing_payment + support_payment:,.2f}\n"
         f"🧾 **Posted By:** <@{helper_id}>"

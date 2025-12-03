@@ -1348,24 +1348,27 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
         except discord.Forbidden:
             print(f"[WARNING] Could not DM worker {worker.id}. DMs may be closed.")
 
-    # ---------- Helper/Pricing/Support Summary ----------
     notify_channel = bot.get_channel(1445612754533880001)
     if notify_channel:
-        for uid, amount, role in [(helper_id, helper_payment, "Helper"),
-                                  (pricing_agent_id, pricing_payment, "Pricing Agent"),
-                                  (support_agent_id, support_payment, "Support Agent")]:
-            if uid and amount > 0:
-                helper_embed = Embed(
-                    title=f"🎯 {role} Commission Summary",
-                    color=discord.Color.gold()
-                )
-                helper_embed.add_field(name="📜 Order ID", value=f"`{order_id}`", inline=True)
-                helper_embed.add_field(name="💰 Order Value", value=f"**```{value}$```**", inline=True)
-                helper_embed.add_field(name="🎁 Your Share", value=f"**```{amount}$```**", inline=True)
-                helper_embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
-                helper_embed.set_author(name="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
-                helper_embed.set_footer(text="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
-                await notify_channel.send(f"<@{uid}>", embed=helper_embed)
+        # Only include pricing_agent and support_agent in this embed
+        embed = discord.Embed(
+            title=f"🎯 Agents Commission Summary",
+            color=discord.Color.gold()
+        )
+        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+        embed.set_author(name="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+        embed.set_footer(text="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+
+        embed.add_field(name="📜 Order ID", value=f"`{order_id}`", inline=True)
+        embed.add_field(name="💰 Order Value", value=f"**```{value}$```**", inline=True)
+
+        if pricing_agent_id and pricing_payment > 0:
+            embed.add_field(name="💼 Pricing Agent Share", value=f"<@{pricing_agent_id}> — **{pricing_payment}$**", inline=True)
+        if support_agent_id and support_payment > 0:
+            embed.add_field(name="🛡 Support Agent Share", value=f"<@{support_agent_id}> — **{support_payment}$**", inline=True)
+
+        await notify_channel.send(embed=embed)
+
 
     # ---------- Final Response ----------
     await interaction.followup.send("✅ Order marked as completed successfully!", ephemeral=True)

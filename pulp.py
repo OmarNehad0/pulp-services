@@ -305,23 +305,27 @@ async def log_command(interaction: discord.Interaction, command_name: str, detai
 
 # Function to get wallet data (updated to handle both m and $)
 def get_wallet(user_id):
-    # Attempt to fetch the user's wallet data from MongoDB
-    wallet_data = wallets_collection.find_one({"user_id": user_id})
-
-    # If the wallet doesn't exist in the database, create a new one with default values
-    if not wallet_data:
-        print(f"Wallet not found for {user_id}, creating new wallet...")
-        wallet_data = {
-            "user_id": user_id,
-            "wallet_dollars": 0,  # Initialize with 0$
-            "spent_dollars": 0,  # Initialize with 0$ spent
-            "deposit_dollars": 0     # Initialize with 0M deposit
+    wallet = wallet_collection.find_one({"_id": user_id})
+    if not wallet:
+        wallet = {
+            "_id": user_id,
+            "wallet_dollars": 0,
+            "spent_dollars": 0,
+            "deposit_dollars": 0,
+            "total_earnings": 0,
+            "completed_orders": 0
         }
-        # Insert the new wallet into the database
-        wallets_collection.insert_one(wallet_data)
-        print(f"New wallet created for {user_id}: {wallet_data}")
+        wallet_collection.insert_one(wallet)
+    else:
+        # Ensure missing fields are always added
+        wallet.setdefault("wallet_dollars", 0)
+        wallet.setdefault("spent_dollars", 0)
+        wallet.setdefault("deposit_dollars", 0)
+        wallet.setdefault("total_earnings", 0)
+        wallet.setdefault("completed_orders", 0)
 
-    return wallet_data
+    return wallet
+
 # Function to update wallet in MongoDB
 def update_wallet(user_id, field, value, currency):
     # Convert all values to float safely
@@ -348,6 +352,15 @@ def update_wallet(user_id, field, value, currency):
         {"$inc": {field: value}},
         upsert=True
     )
+PRIVILEGED_WALLET_ROLES = {
+    1433451021736087743,
+    1434344428767809537,
+    1433480285688692856,
+    1433500886721757215
+}
+
+def has_extra_options(member):
+    return any(role.id in PRIVILEGED_WALLET_ROLES for role in member.roles)
 
 @bot.tree.command(name="wallet", description="Check a user's wallet balance")
 async def wallet(interaction: discord.Interaction, user: discord.Member = None):
@@ -381,11 +394,12 @@ async def wallet(interaction: discord.Interaction, user: discord.Member = None):
     wallet_dollars = wallet_data.get('wallet_dollars', 0)
     spent_dollars = wallet_data.get('spent_dollars', 0)
     deposit_dollars = wallet_data.get('deposit_dollars', 0)
+    total_earnings = wallet_data.get('total_earnings', 0)
+    completed_orders = wallet_data.get('completed_orders', 0)
 
     # Get user's avatar (fallback to default image)
     default_thumbnail = "https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif?ex=6930e694&is=692f9514&hm=97793a52982a40faa96ee65e6bef259afc8cc2167b3518bbf681c2fcd5b1ba99&=&width=120&height=120"
     thumbnail_url = user.avatar.url if user.avatar else default_thumbnail
-    
 
     # Create embed message
     embed = discord.Embed(title=f"{user.display_name}'s Wallet 💳", color=discord.Color.from_rgb(139, 0, 0))
@@ -396,15 +410,29 @@ async def wallet(interaction: discord.Interaction, user: discord.Member = None):
         inline=False
     )
     embed.add_field(
-    name="Deposit",
-    value=f"```🕵️ ${deposit_dollars}```",
-    inline=False
+        name="Deposit",
+        value=f"```🕵️ ${deposit_dollars}```",
+        inline=False
     )
     embed.add_field(
         name="Spent",
         value=f"```✍️ ${spent_dollars}```",
         inline=False
     )
+
+    # Show total earnings & completed orders only if user has privileged roles
+    if has_extra_options(user):
+        embed.add_field(
+            name="Total Earnings",
+            value=f"```💰 ${total_earnings}```",
+            inline=False
+        )
+        embed.add_field(
+            name="Completed Orders",
+            value=f"```📦 {completed_orders}```",
+            inline=False
+        )
+
     embed.set_image(url="https://media.discordapp.net/attachments/1445150831233073223/1445590514127732848/Footer_2.gif?ex=6930e694&is=692f9514&hm=d23318b8712a50f41e96c7d7d1bead229034c3df451c7e478cffd25e5efadf1d&=&width=520&height=72")
 
     # Ensure requester avatar exists
@@ -412,6 +440,8 @@ async def wallet(interaction: discord.Interaction, user: discord.Member = None):
     embed.set_footer(text=f"Requested by {interaction.user.display_name}", icon_url=requester_avatar)
 
     await interaction.response.send_message(embed=embed)
+
+
 
 @bot.tree.command(name="add_remove_spent", description="Add or remove spent value from a user's wallet")
 @app_commands.choices(
@@ -1223,6 +1253,12 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
     # Update wallets
     update_wallet(customer_id, "spent_dollars", value, "$")
     update_wallet(worker_id, "wallet_dollars", worker_payment, "$")
+    # Update privileged stats if worker has privileged role
+    worker_member = interaction.guild.get_member(int(worker_id))
+    if worker_member and has_extra_options(worker_member):
+        update_wallet(worker_id, "total_earnings", worker_payment, "$")
+        update_wallet(worker_id, "completed_orders", 1)
+
     if pricing_agent_id:
         update_wallet(str(pricing_agent_id), "wallet_dollars", pricing_payment, "$")
     if support_agent:

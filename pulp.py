@@ -84,7 +84,7 @@ class FeedbackModal(Modal):
         review = self.review_input.value
 
         username = "Anonymous" if self.anonymous else interaction.user.name
-
+        icon_url = "https://media.discordapp.net/attachments/1433919338930245753/1446047635902300193/110px-Hood_of_darkness_detail.webp?ex=6932904e&is=69313ece&hm=66959a21e68663e760bd262c3fa7eff4066036ecf76fade1caef670fb05ba87c&=&format=webp&width=88&height=172" if self.anonymous else interaction.user.display_avatar.url
         embed = Embed(
             title="🌟 Pulp Vouches! 🌟",
             color=discord.Color.from_rgb(200, 0, 0),
@@ -1181,8 +1181,7 @@ async def process_post_order(
 
     if available_funds < value:
         await interaction.followup.send(
-            f"⚠️ {customer.mention} only has **{available_funds}$**, but this order costs **{value}$**. Please top up your wallet.",
-            ephemeral=True
+            f"⚠️ {customer.mention} only has **{available_funds}$**, but this order costs **{value}$**. Please top up your wallet."
         )
         return
 
@@ -1230,9 +1229,7 @@ async def process_post_order(
             worker_wallet = get_wallet(str(worker.id))
             if worker_wallet.get("deposit_dollars", 0) < deposit_required:
                 await interaction.followup.send(
-                    f"⚠️ {worker.display_name} does not have enough deposit. Required: {formatted_deposit}",
-                    ephemeral=True
-                )
+                    f"⚠️ {worker.display_name} does not have enough deposit. Required: {formatted_deposit}")
                 return
 
         message = await channel.send(embed=embed)
@@ -1259,7 +1256,7 @@ async def process_post_order(
             update_wallet(str(worker.id), "wallet_dollars", round(deposit_required * 0.85, 2), "$")
 
         await channel.set_permissions(worker, read_messages=True, send_messages=True)
-        await interaction.followup.send(f"✅ Order assigned directly to {worker.mention}!", ephemeral=True)
+        await interaction.followup.send(f"✅ Order assigned directly to {worker.mention}!")
         return
 
     # Normal post (no worker)
@@ -1367,7 +1364,7 @@ async def post(
     worker: discord.Member = None
 ):
     if not has_permission(interaction.user):
-        await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+        await interaction.response.send_message("❌ You don't have permission to use this command.")
         return
 
     modal = OrderDescriptionModal(
@@ -1396,18 +1393,18 @@ from discord import TextStyle
 async def complete(interaction: Interaction, order_id: int, support_agent: discord.Member,worker_channel: discord.TextChannel, commission: float = 20.0):
     # Permission check
     if not has_permission(interaction.user):
-        await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+        await interaction.response.send_message("❌ You don't have permission to use this command.")
         return
     await interaction.response.defer(ephemeral=True)
 
     # Fetch order
     order = orders_collection.find_one({"_id": order_id})
     if not order:
-        await interaction.response.send_message("❌ Order not found!", ephemeral=True)
+        await interaction.response.send_message("❌ Order not found!")
         return
 
     if order.get("status") == "completed":
-        await interaction.response.send_message("⚠️ This order has already been completed.", ephemeral=True)
+        await interaction.response.send_message("⚠️ This order has already been completed.")
         return
 
     # ------------ VALUE SANITIZER (USD ONLY) ------------
@@ -1495,7 +1492,6 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
         embed.set_footer(text=f"📜 Order ID: {order_id}", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
         await original_channel.send(embed=embed)
 
-        # ---------- Feedback Embed + Buttons ----------
         # Modified FeedbackModal to accept anonymous flag
         class FeedbackModal(Modal):
             def __init__(self, default_stars=5, anonymous=False):
@@ -1531,7 +1527,7 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
                 review = self.review_input.value
 
                 username = "Anonymous" if self.anonymous else interaction.user.name
-
+                icon_url = "https://media.discordapp.net/attachments/1433919338930245753/1446047635902300193/110px-Hood_of_darkness_detail.webp?ex=6932904e&is=69313ece&hm=66959a21e68663e760bd262c3fa7eff4066036ecf76fade1caef670fb05ba87c&=&format=webp&width=88&height=172" if self.anonymous else interaction.user.display_avatar.url
                 embed = Embed(
                     title="🌟 Pulp Vouches! 🌟",
                     color=discord.Color.from_rgb(200, 0, 0),
@@ -1641,7 +1637,7 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
 
 
     # ---------- Final Response ----------
-    await interaction.followup.send("✅ Order marked as completed successfully!", ephemeral=True)
+    await interaction.followup.send("✅ Order marked as completed successfully!")
 
     # ---------- Log Command ----------
     await log_command(
@@ -1665,8 +1661,7 @@ async def order_cancel(interaction: Interaction, order_id: int):
     # Permission check
     if not has_permission(interaction.user):
         await interaction.response.send_message(
-            "❌ You don't have permission to use this command.",
-            ephemeral=True
+            "❌ You don't have permission to use this command."
         )
         return
 
@@ -1739,7 +1734,7 @@ async def view_order(interaction: discord.Interaction, order_id: int):
 
     # Check if user has at least one of the required roles
     if not any(role.id in allowed_roles for role in interaction.user.roles):
-        await interaction.response.send_message("❌ You do not have permission to use this command.", ephemeral=True)
+        await interaction.response.send_message("❌ You do not have permission to use this command.")
         return
 
     order = orders_collection.find_one({"_id": order_id})

@@ -1209,14 +1209,25 @@ async def process_post_order(
         title=f"💼 {'Order Set' if worker else 'New Order'} | ID: {order_id}",
         color=discord.Color.from_rgb(139, 0, 0)
     )
+    embed = discord.Embed(
+    title=f"💼 {'Order Set' if worker else 'New Order'} | ID: {order_id}",
+    color=discord.Color.from_rgb(139, 0, 0)
+    )
     embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
     embed.set_author(name="💼 Order Details", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
     embed.description = f"📕 **Description:**\n{description}"
     embed.add_field(name="💰 Value", value=f"**```{formatted_value}```**", inline=True)
     embed.add_field(name="💵 Deposit Required", value=f"**```{formatted_deposit}```**", inline=True)
-    embed.add_field(name="🕵️‍♂️ Holder", value=holder.mention, inline=True)
+
+    # Add holder and/or worker
+    if worker:
+        embed.add_field(name="👷 Worker", value=worker.mention, inline=True)
+    else:
+        embed.add_field(name="🕵️‍♂️ Holder", value=holder.mention, inline=True)
+
     embed.set_image(url=image if image else "https://media.discordapp.net/attachments/1445150831233073223/1445590514127732848/Footer_2.gif")
     embed.set_footer(text=f"Order ID: {order_id}", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+
 
     # If worker assigned
     if worker:
@@ -1685,7 +1696,16 @@ async def order_cancel(interaction: Interaction, order_id: int):
 
     # 🗑 REMOVE FROM DATABASE
     orders_collection.delete_one({"_id": order_id})
-
+    # 2️⃣ Delete ticket message (the one in ticket channel)
+    ticket_channel = bot.get_channel(order.get("ticket_channel_id") or order["original_channel_id"])
+    ticket_message_id = order.get("ticket_message_id", order["message_id"])  # fallback to main message if missing
+    if ticket_channel and ticket_message_id:
+        try:
+            ticket_msg = await ticket_channel.fetch_message(ticket_message_id)
+            await ticket_msg.delete()
+        except discord.NotFound:
+            pass
+            
     # 📘 LOG REFUND
     refund_log = (
         f"💸 **Order Cancelled**\n"
@@ -1698,8 +1718,7 @@ async def order_cancel(interaction: Interaction, order_id: int):
 
     # ✔ SEND CONFIRMATION
     await interaction.response.send_message(
-        f"✅ **Order {order_id} has been cancelled and fully refunded.**",
-        ephemeral=True
+        f"✅ **Order {order_id} has been cancelled and fully refunded.**"
     )
 
 

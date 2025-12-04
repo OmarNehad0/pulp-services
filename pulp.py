@@ -49,9 +49,11 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 LOG_CHANNEL_ID = 1433919895875092593  # Replace with your actual log channel ID
 
 # ---------- Feedback Modal ----------
+# Modified FeedbackModal to accept anonymous flag
 class FeedbackModal(Modal):
-    def __init__(self, default_stars=5):
+    def __init__(self, default_stars=5, anonymous=False):
         super().__init__(title="Service Feedback")
+        self.anonymous = anonymous
         self.stars_input = TextInput(
             label="Rating (1–5 ⭐)",
             style=TextStyle.short,
@@ -67,18 +69,8 @@ class FeedbackModal(Modal):
             required=True,
             max_length=500
         )
-        # Add a TextInput for anonymous option
-        self.anonymous_input = TextInput(
-            label="Post Anonymously? Type YES to hide your name",
-            style=TextStyle.short,
-            placeholder="YES to post anonymously",
-            max_length=3,
-            required=False
-        )
-
         self.add_item(self.stars_input)
         self.add_item(self.review_input)
-        self.add_item(self.anonymous_input)
 
     async def on_submit(self, interaction: Interaction):
         try:
@@ -90,9 +82,8 @@ class FeedbackModal(Modal):
 
         stars_text = "⭐" * stars
         review = self.review_input.value
-        anonymous = self.anonymous_input.value.strip().lower() == "yes"
 
-        username = "Anonymous" if anonymous else interaction.user.name
+        username = "Anonymous" if self.anonymous else interaction.user.name
 
         embed = Embed(
             title="🌟 Pulp Vouches! 🌟",
@@ -116,13 +107,10 @@ class FeedbackModal(Modal):
             await interaction.response.send_message("⚠️ Feedback channel not found!", ephemeral=True)
 
 
-
-# ---------- Buttons ----------
+# Modified FeedbackView with two buttons
 class FeedbackView(View):
     def __init__(self):
         super().__init__(timeout=None)
-
-        # Sythe URL button
         self.add_item(Button(
             label="Vouch For Us On Sythe!. (2% CashBack)",
             url="https://www.sythe.org/threads/pulp-services-vouch-thread/",
@@ -132,7 +120,11 @@ class FeedbackView(View):
 
     @discord.ui.button(label="Rate / Give Feedback ⭐", style=discord.ButtonStyle.primary)
     async def feedback_button(self, interaction: Interaction, button: Button):
-        await interaction.response.send_modal(FeedbackModal(default_stars=5))
+        await interaction.response.send_modal(FeedbackModal(default_stars=5, anonymous=False))
+
+    @discord.ui.button(label="Anonymous Review 👤", style=discord.ButtonStyle.secondary)
+    async def anonymous_button(self, interaction: Interaction, button: Button):
+        await interaction.response.send_modal(FeedbackModal(default_stars=5, anonymous=True))
 
 
 # ---------- Slash Command ----------
@@ -1504,9 +1496,11 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
         await original_channel.send(embed=embed)
 
         # ---------- Feedback Embed + Buttons ----------
+        # Modified FeedbackModal to accept anonymous flag
         class FeedbackModal(Modal):
-            def __init__(self, default_stars=5):
+            def __init__(self, default_stars=5, anonymous=False):
                 super().__init__(title="Service Feedback")
+                self.anonymous = anonymous
                 self.stars_input = TextInput(
                     label="Rating (1–5 ⭐)",
                     style=TextStyle.short,
@@ -1522,18 +1516,8 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
                     required=True,
                     max_length=500
                 )
-                # Add a TextInput for anonymous option
-                self.anonymous_input = TextInput(
-                    label="Post Anonymously? Type YES to hide your name",
-                    style=TextStyle.short,
-                    placeholder="YES to post anonymously",
-                    max_length=3,
-                    required=False
-                )
-        
                 self.add_item(self.stars_input)
                 self.add_item(self.review_input)
-                self.add_item(self.anonymous_input)
 
             async def on_submit(self, interaction: Interaction):
                 try:
@@ -1545,9 +1529,8 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
 
                 stars_text = "⭐" * stars
                 review = self.review_input.value
-                anonymous = self.anonymous_input.value.strip().lower() == "yes"
 
-                username = "Anonymous" if anonymous else interaction.user.name
+                username = "Anonymous" if self.anonymous else interaction.user.name
 
                 embed = Embed(
                     title="🌟 Pulp Vouches! 🌟",
@@ -1571,6 +1554,7 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
                     await interaction.response.send_message("⚠️ Feedback channel not found!", ephemeral=True)
 
 
+        # Modified FeedbackView with two buttons
         class FeedbackView(View):
             def __init__(self):
                 super().__init__(timeout=None)
@@ -1583,7 +1567,12 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
 
             @discord.ui.button(label="Rate / Give Feedback ⭐", style=discord.ButtonStyle.primary)
             async def feedback_button(self, interaction: Interaction, button: Button):
-                await interaction.response.send_modal(FeedbackModal(default_stars=5))
+                await interaction.response.send_modal(FeedbackModal(default_stars=5, anonymous=False))
+
+            @discord.ui.button(label="Anonymous Review 👤", style=discord.ButtonStyle.secondary)
+            async def anonymous_button(self, interaction: Interaction, button: Button):
+                await interaction.response.send_modal(FeedbackModal(default_stars=5, anonymous=True))
+
 
         feedback_embed = Embed(
             title="📝 Vouch For Us!",

@@ -48,6 +48,130 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 LOG_CHANNEL_ID = 1433919895875092593  # Replace with your actual log channel ID
 
+# ---------- Feedback Modal ----------
+class FeedbackModal(Modal):
+    def __init__(self, default_stars=5):
+        super().__init__(title="Service Feedback")
+
+        self.stars_input = TextInput(
+            label="Rating (1–5 ⭐)",
+            style=TextStyle.short,
+            default=str(default_stars),
+            placeholder="1–5 stars",
+            max_length=1,
+            required=True
+        )
+
+        self.review_input = TextInput(
+            label="We Appreciate A Detailed Review!",
+            style=TextStyle.paragraph,
+            placeholder="Describe your service experience...",
+            required=True,
+            max_length=500
+        )
+
+        self.add_item(self.stars_input)
+        self.add_item(self.review_input)
+
+    async def on_submit(self, interaction: Interaction):
+        try:
+            stars = int(self.stars_input.value)
+            if stars < 1 or stars > 5:
+                stars = 5
+        except:
+            stars = 5
+
+        stars_text = "⭐" * stars
+        review = self.review_input.value
+
+        embed = discord.Embed(
+            title="🌟 Pulp Vouches! 🌟",
+            color=discord.Color.from_rgb(200, 0, 0),
+            description=(
+                f"**Date:** `{interaction.created_at.strftime('%B %d, %Y')}`\n"
+                f"**Discord User:** `{interaction.user.name}`\n\n"
+                f"**Rating:** {stars_text}\n"
+                f"**Vouch:**\n{review}"
+            )
+        )
+
+        embed.set_author(
+            name=f"{interaction.user.name} left a vouch!",
+            icon_url=interaction.user.display_avatar.url
+        )
+        embed.set_thumbnail(
+            url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif"
+        )
+        embed.set_footer(
+            text="Thank you for your feedback!",
+            icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif"
+        )
+
+        channel = interaction.client.get_channel(FEEDBACK_CHANNEL_ID)
+        if channel:
+            await channel.send(embed=embed)
+            await interaction.response.send_message("✅ Thank you for your feedback!", ephemeral=True)
+        else:
+            await interaction.response.send_message("⚠️ Feedback channel not found!", ephemeral=True)
+
+
+# ---------- Buttons ----------
+class FeedbackView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+        # Sythe URL button
+        self.add_item(Button(
+            label="Vouch For Us On Sythe!. (2% CashBack)",
+            url="https://www.sythe.org/threads/pulp-services-vouch-thread/",
+            style=discord.ButtonStyle.url,
+            emoji=discord.PartialEmoji(name="1332330797998280724", id=1445611458208727111)
+        ))
+
+    @discord.ui.button(label="Rate / Give Feedback ⭐", style=discord.ButtonStyle.primary)
+    async def feedback_button(self, interaction: Interaction, button: Button):
+        await interaction.response.send_modal(FeedbackModal(default_stars=5))
+
+
+# ---------- Slash Command ----------
+@bot.tree.command(name="request-review", description="Send the review embed to a user.")
+@app_commands.describe(user="The user to request a review from")
+async def request_review(interaction: Interaction, user: discord.Member):
+
+    feedback_embed = discord.Embed(
+        title="📝 Vouch For Us!",
+        color=discord.Color.from_rgb(200, 0, 0),
+        description=(
+            f"👋 Hey {user.mention},\n"
+            "**We hope you had a great experience with us.**\n\n"
+            "**If you're happy with our service, we would truly appreciate it if you could leave us a review using the buttons below.**\n\n"
+            "**✨ +10% Discount When You Leave A Vouch!**\n"
+            "**🔗 Check Discounts Here:** <#1433917514412462090>\n\n"
+            "**Please select your rating below.**\n"
+            "You can also change the star amount inside the popup."
+        )
+    )
+
+    feedback_embed.set_author(
+        name="Pulp System",
+        icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif"
+    )
+
+    feedback_embed.set_thumbnail(
+        url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif"
+    )
+
+    feedback_embed.set_footer(
+        text="Pulp Services",
+        icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif"
+    )
+
+    await interaction.response.send_message(
+        content=f"{user.mention}",
+        embed=feedback_embed,
+        view=FeedbackView()
+    )
+    
 class InfoModal(Modal, title="Provide Your Information"):
     def __init__(self, customer: discord.Member, worker: discord.Member):
         super().__init__()
@@ -167,7 +291,7 @@ class InfoButtonView(View):
 
 
 # Slash Command Version
-@bot.tree.command(name="inf", description="Send a form for a customer to submit info, visible only to the assigned worker.")
+@bot.tree.command(name="Submit-details", description="Send a form for a customer to submit info, visible only to the assigned worker.")
 @app_commands.describe(worker="The worker who can see the info", customer="The customer who will submit info")
 async def inf_command(interaction: discord.Interaction, worker: discord.Member, customer: discord.Member):
     view = InfoButtonView(customer, worker)
@@ -1044,7 +1168,54 @@ def get_next_order_id():
         return_document=ReturnDocument.AFTER
     )
     return counter["seq"]
+    
+class OrderDescriptionModal(discord.ui.Modal, title="Order Description"):
+    description = discord.ui.TextInput(
+        label="Order Description",
+        placeholder="Enter all order details here...",
+        style=discord.TextStyle.long,
+        required=True,
+        max_length=1000,
+        default="Default description..."  # You can remove the default if you want
+    )
 
+    def __init__(
+        self,
+        interaction,
+        customer,
+        pricing_agent,
+        value,
+        deposit_required,
+        holder,
+        channel,
+        image,
+        worker
+    ):
+        super().__init__()
+        self.interaction = interaction
+        self.customer = customer
+        self.pricing_agent = pricing_agent
+        self.value = value
+        self.deposit_required = deposit_required
+        self.holder = holder
+        self.channel = channel
+        self.image = image
+        self.worker = worker
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # When submitted, continue the original command flow
+        await process_post_order(
+            interaction,
+            self.customer,
+            self.pricing_agent,
+            self.value,
+            self.deposit_required,
+            self.holder,
+            str(self.description),
+            self.channel,
+            self.image,
+            self.worker
+        )
 @bot.tree.command(name="post", description="Post a new order or assign directly to a worker (USD only).")
 @app_commands.describe(
     customer="The customer for the order",
@@ -1052,7 +1223,6 @@ def get_next_order_id():
     deposit_required="The deposit required for the order",
     holder="The holder of the order",
     channel="The channel to post the order (optional)",
-    description="Description of the order",
     image="Image URL to show at the bottom of the embed",
     worker="Optional: Assign a worker directly (acts like /set)",
     pricing_agent="Pricing agent to take half of the helper commission"
@@ -1064,18 +1234,42 @@ async def post(
     value: float,
     deposit_required: float,
     holder: discord.Member,
-    description: str,
     channel: discord.TextChannel = None,
     image: str = None,
     worker: discord.Member = None
 ):
+
     if not has_permission(interaction.user):
         await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
         return
+    modal = OrderDescriptionModal(
+        interaction,
+        customer,
+        pricing_agent,
+        value,
+        deposit_required,
+        holder,
+        channel,
+        image,
+        worker
+    )
 
+    await interaction.response.send_modal(modal)
     order_id = get_next_order_id()
     original_channel_id = interaction.channel.id
+    if available_funds < value:
+        await interaction.response.send_message(
+            f"⚠️ **Insufficient Balance**\n"
+            f"{customer.mention} only has **{available_funds}$**, but this order costs **{value}$**.\n\n"
+            f"💳 Please **top up the wallet** before posting this order.",
+            ephemeral=True
+        )
+        return
 
+    # AUTO-DEDUCT ORDER VALUE FROM CUSTOMER
+    update_wallet(str(customer.id), "wallet_dollars", -value, "$")
+    update_wallet(str(customer.id), "spent_dollars", value, "$")
+    
     # Default channel if not provided
     if not channel:
         channel = interaction.guild.get_channel(1433919267711094845)
@@ -1116,7 +1310,8 @@ async def post(
 
         message = await channel.send(embed=embed)
         message_id = message.id
-
+        await message.pin(reason="Auto-pinned order")
+        
         orders_collection.insert_one({
             "_id": order_id,
             "customer": customer.id,
@@ -1156,6 +1351,7 @@ async def post(
 
     message = await channel.send(f"{role_ping}" if role_ping else None, embed=embed)
     await message.edit(view=OrderButton(order_id, deposit_required, customer.id, original_channel_id, message.id, channel.id))
+    await message.pin(reason="Auto-pinned order")
 
     orders_collection.insert_one({
         "_id": order_id,
@@ -1301,6 +1497,8 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
                          "• **Change your account password**\n"
                          "• **End All Sessions**\n"
                          "• **Change your bank PIN** (Optional)\n"),
+                         "• **Make sure to reset the backup codes if they were provided.**\n"),
+                         "• **For legacy login accounts: Check linked accounts and remove any suspicious connections.**\n"),
             color=discord.Color.gold()
         )
         security.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
@@ -1338,7 +1536,7 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
                         stars = 5
                 except:
                     stars = 5
-                stars_text = "<:Glimmer:1441041235547525120>" * stars
+                stars_text = "⭐" * stars
                 review = self.review_input.value
 
                 embed = Embed(
@@ -1445,42 +1643,73 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
     )
 
 
+# 📌 /order_cancel command — FULL ORDER CANCELLATION WITH AUTO-REFUND
+@bot.tree.command(name="order_cancel", description="Cancel an order and auto-refund the customer.")
+@app_commands.describe(order_id="The order ID to cancel")
+async def order_cancel(interaction: Interaction, order_id: int):
 
-# 📌 /order_deletion command
-@bot.tree.command(name="order_deletion", description="Delete an order.")
-async def order_deletion(interaction: Interaction, order_id: int):
+    # Permission check
     if not has_permission(interaction.user):
-        await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+        await interaction.response.send_message(
+            "❌ You don't have permission to use this command.",
+            ephemeral=True
+        )
         return
+
+    # Fetch order
     order = orders_collection.find_one({"_id": order_id})
-    
     if not order:
         await interaction.response.send_message("❌ Order not found!", ephemeral=True)
         return
 
-    # Delete the order message in the orders channel
+    customer_id = str(order["customer"])
+    value = float(order.get("value", 0))
+    deposit_required = float(order.get("deposit_required", 0))
+    worker_id = str(order["worker"]) if order.get("worker") else None
+
+    # 🔄 REFUND THE CUSTOMER (FULL AMOUNT)
+    update_wallet(customer_id, "wallet_dollars", value, "$")
+    update_wallet(customer_id, "spent_dollars", -value, "$")
+
+
+    # 1️⃣ Delete main order message in order channel
     order_channel = bot.get_channel(order["channel_id"])
     if order_channel:
         try:
-            message = await order_channel.fetch_message(order["message_id"])
-            await message.delete()
+            msg = await order_channel.fetch_message(order["message_id"])
+            await msg.delete()
         except discord.NotFound:
-            print(f"⚠️ Message for order {order_id} not found in orders channel. Skipping deletion.")
+            pass
 
-    # Delete the original post message in the interaction channel
+    # 2️⃣ Delete original message (confirmation message)
     original_channel = bot.get_channel(order["original_channel_id"])
     if original_channel:
         try:
-            original_message = await original_channel.fetch_message(order["message_id"])
-            await original_message.delete()
+            orig = await original_channel.fetch_message(order["message_id"])
+            await orig.delete()
         except discord.NotFound:
-            print(f"⚠️ Original message for order {order_id} not found. Skipping deletion.")
+            pass
 
-    # Remove the order from MongoDB
+    # 🗑 REMOVE FROM DATABASE
     orders_collection.delete_one({"_id": order_id})
-    
-    await interaction.response.send_message(f"✅ Order {order_id} has been successfully deleted.", ephemeral=True)
-    await log_command(interaction, "Order Deleted", f"Order ID: {order_id}\nDeleted by: {interaction.user.mention} (`{interaction.user.id}`)")
+
+    # 📘 LOG REFUND
+    refund_log = (
+        f"💸 **Order Cancelled**\n"
+        f"Order ID: `{order_id}`\n"
+        f"Customer Refunded: **{value}$**\n"
+        + (f"Worker Deposit Refunded: **{deposit_required}$**\n" if worker_id else "")
+        + f"Cancelled by: {interaction.user.mention} (`{interaction.user.id}`)"
+    )
+
+    await log_command(interaction, "Order Cancelled", refund_log)
+
+    # ✔ SEND CONFIRMATION
+    await interaction.response.send_message(
+        f"✅ **Order {order_id} has been cancelled and fully refunded.**",
+        ephemeral=True
+    )
+
 
 @bot.tree.command(name="view_order", description="View details of an order")
 async def view_order(interaction: discord.Interaction, order_id: int):

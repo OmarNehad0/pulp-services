@@ -1169,108 +1169,35 @@ def get_next_order_id():
     )
     return counter["seq"]
     
-class OrderDescriptionModal(discord.ui.Modal, title="Order Description"):
-    description = discord.ui.TextInput(
-        label="Order Description",
-        placeholder="Enter all order details here...",
-        style=discord.TextStyle.long,
-        required=True,
-        max_length=1000,
-        default="Default description..."  # You can remove the default if you want
-    )
-
-    def __init__(
-        self,
-        interaction,
-        customer,
-        pricing_agent,
-        value,
-        deposit_required,
-        holder,
-        channel,
-        image,
-        worker
-    ):
-        super().__init__()
-        self.interaction = interaction
-        self.customer = customer
-        self.pricing_agent = pricing_agent
-        self.value = value
-        self.deposit_required = deposit_required
-        self.holder = holder
-        self.channel = channel
-        self.image = image
-        self.worker = worker
-
-    async def on_submit(self, interaction: discord.Interaction):
-        # When submitted, continue the original command flow
-        await process_post_order(
-            interaction,
-            self.customer,
-            self.pricing_agent,
-            self.value,
-            self.deposit_required,
-            self.holder,
-            str(self.description),
-            self.channel,
-            self.image,
-            self.worker
-        )
-@bot.tree.command(name="post", description="Post a new order or assign directly to a worker (USD only).")
-@app_commands.describe(
-    customer="The customer for the order",
-    value="The value of the order (in $)",
-    deposit_required="The deposit required for the order",
-    holder="The holder of the order",
-    channel="The channel to post the order (optional)",
-    image="Image URL to show at the bottom of the embed",
-    worker="Optional: Assign a worker directly (acts like /set)",
-    pricing_agent="Pricing agent to take half of the helper commission"
-)
-async def post(
+# -------------------- PROCESS POST ORDER --------------------
+async def process_post_order(
     interaction: discord.Interaction,
     customer: discord.Member,
     pricing_agent: discord.Member,
     value: float,
     deposit_required: float,
     holder: discord.Member,
+    description: str,
     channel: discord.TextChannel = None,
     image: str = None,
     worker: discord.Member = None
 ):
+    # Get customer funds
+    wallet_data = get_wallet(str(customer.id))
+    available_funds = wallet_data.get("wallet_dollars", 0) + wallet_data.get("deposit_dollars", 0)
 
-    if not has_permission(interaction.user):
-        await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
-        return
-    modal = OrderDescriptionModal(
-        interaction,
-        customer,
-        pricing_agent,
-        value,
-        deposit_required,
-        holder,
-        channel,
-        image,
-        worker
-    )
-
-    await interaction.response.send_modal(modal)
-    order_id = get_next_order_id()
-    original_channel_id = interaction.channel.id
     if available_funds < value:
         await interaction.response.send_message(
-            f"⚠️ **Insufficient Balance**\n"
-            f"{customer.mention} only has **{available_funds}$**, but this order costs **{value}$**.\n\n"
-            f"💳 Please **top up the wallet** before posting this order.",
+            f"⚠️ {customer.mention} only has **{available_funds}$**, but this order costs **{value}$**. Please top up your wallet.",
             ephemeral=True
         )
         return
 
-    # AUTO-DEDUCT ORDER VALUE FROM CUSTOMER
+    # Deduct order value from customer
     update_wallet(str(customer.id), "wallet_dollars", -value, "$")
     update_wallet(str(customer.id), "spent_dollars", value, "$")
-    
-    # Default channel if not provided
+
+    # Default channel
     if not channel:
         channel = interaction.guild.get_channel(1433919267711094845)
 
@@ -1278,7 +1205,7 @@ async def post(
     formatted_value = f"{value:,.2f}$"
     formatted_deposit = f"{deposit_required:,.2f}$"
 
-    # Embed creation
+    # Create embed
     embed = discord.Embed(title="New Order", color=discord.Color.from_rgb(139, 0, 0))
     embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
     embed.set_author(name="💼 Order Posted", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
@@ -1286,21 +1213,18 @@ async def post(
     embed.add_field(name="💰 Value", value=f"**```{formatted_value}```**", inline=True)
     embed.add_field(name="💵 Deposit Required", value=f"**```{formatted_deposit}```**", inline=True)
     embed.add_field(name="🕵️‍♂️ Holder", value=holder.mention, inline=True)
+    embed.set_image(url=image if image else "https://media.discordapp.net/attachments/1445150831233073223/1445590514127732848/Footer_2.gif")
 
-    if image:
-        embed.set_image(url=image)
-    else:
-        embed.set_image(url="https://media.discordapp.net/attachments/1445150831233073223/1445590514127732848/Footer_2.gif")
+    order_id = get_next_order_id()
+    original_channel_id = interaction.channel.id
 
-    embed.set_footer(text=f"Order ID: {order_id}", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
-
-    # ----------- If worker is provided → act like /set -----------
+    # ---------------- If worker assigned ----------------
     if worker:
         skip_deposit = discord.utils.get(worker.roles, id=1434981057962446919) is not None
 
         if not skip_deposit:
-            wallet_data = get_wallet(str(worker.id))
-            worker_deposit = wallet_data.get("deposit_dollars", 0)
+            worker_wallet = get_wallet(str(worker.id))
+            worker_deposit = worker_wallet.get("deposit_dollars", 0)
             if worker_deposit < deposit_required:
                 await interaction.response.send_message(
                     f"⚠️ {worker.display_name} does not have enough deposit. Required: {formatted_deposit}, Available: {worker_deposit}$",
@@ -1309,9 +1233,8 @@ async def post(
                 return
 
         message = await channel.send(embed=embed)
-        message_id = message.id
         await message.pin(reason="Auto-pinned order")
-        
+
         orders_collection.insert_one({
             "_id": order_id,
             "customer": customer.id,
@@ -1320,7 +1243,7 @@ async def post(
             "value": value,
             "deposit_required": deposit_required,
             "holder": holder.id,
-            "message_id": message_id,
+            "message_id": message.id,
             "channel_id": channel.id,
             "original_channel_id": original_channel_id,
             "description": description,
@@ -1334,13 +1257,11 @@ async def post(
         if not skip_deposit:
             update_wallet(str(worker.id), "wallet_dollars", round(deposit_required * 0.85, 2), "$")
 
-        # Give permissions to worker
         await channel.set_permissions(worker, read_messages=True, send_messages=True)
-
         await interaction.response.send_message(f"✅ Order assigned directly to {worker.mention}!", ephemeral=True)
         return
 
-    # ----------- Normal post if no worker assigned -----------
+    # ---------------- Normal post (no worker) ----------------
     role_ping = None
     role1 = discord.utils.get(interaction.guild.roles, id=1433500886721757215)
     role2 = discord.utils.get(interaction.guild.roles, id=1208792946401615902)
@@ -1372,7 +1293,6 @@ async def post(
     confirmation_embed = embed.copy()
     confirmation_embed.title = "✅ Order Posted Successfully"
     await interaction.channel.send(embed=confirmation_embed)
-
     await interaction.response.send_message("💵 Order posted successfully in USD!", ephemeral=True)
 
     await log_command(
@@ -1385,6 +1305,84 @@ async def post(
         f"Channel: {channel.mention}\n"
         f"Description: {description}"
     )
+
+# -------------------- MODAL --------------------
+class OrderDescriptionModal(discord.ui.Modal, title="Order Description"):
+    description = discord.ui.TextInput(
+        label="Order Description",
+        placeholder="Enter all order details here...",
+        style=discord.TextStyle.long,
+        required=True,
+        max_length=1000,
+        default="Default description..."
+    )
+
+    def __init__(self, interaction, customer, pricing_agent, value, deposit_required, holder, channel, image, worker):
+        super().__init__()
+        self.interaction = interaction
+        self.customer = customer
+        self.pricing_agent = pricing_agent
+        self.value = value
+        self.deposit_required = deposit_required
+        self.holder = holder
+        self.channel = channel
+        self.image = image
+        self.worker = worker
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await process_post_order(
+            interaction,
+            self.customer,
+            self.pricing_agent,
+            self.value,
+            self.deposit_required,
+            self.holder,
+            str(self.description),
+            self.channel,
+            self.image,
+            self.worker
+        )
+
+# -------------------- POST COMMAND --------------------
+@bot.tree.command(name="post", description="Post a new order or assign directly to a worker (USD only).")
+@app_commands.describe(
+    customer="The customer for the order",
+    value="The value of the order (in $)",
+    deposit_required="The deposit required for the order",
+    holder="The holder of the order",
+    channel="The channel to post the order (optional)",
+    image="Image URL to show at the bottom of the embed",
+    worker="Optional: Assign a worker directly (acts like /set)",
+    pricing_agent="Pricing agent to take half of the helper commission"
+)
+async def post(
+    interaction: discord.Interaction,
+    customer: discord.Member,
+    pricing_agent: discord.Member,
+    value: float,
+    deposit_required: float,
+    holder: discord.Member,
+    channel: discord.TextChannel = None,
+    image: str = None,
+    worker: discord.Member = None
+):
+    if not has_permission(interaction.user):
+        await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+        return
+
+    modal = OrderDescriptionModal(
+        interaction,
+        customer,
+        pricing_agent,
+        value,
+        deposit_required,
+        holder,
+        channel,
+        image,
+        worker
+    )
+    await interaction.response.send_modal(modal)
+
 
 FEEDBACK_CHANNEL_ID= 1433532064753389629
 from discord import TextStyle

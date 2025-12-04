@@ -291,7 +291,7 @@ class InfoButtonView(View):
 
 
 # Slash Command Version
-@bot.tree.command(name="Submit-details", description="Send a form for a customer to submit info, visible only to the assigned worker.")
+@bot.tree.command(name="submit-details", description="Send a form for a customer to submit info, visible only to the assigned worker.")
 @app_commands.describe(worker="The worker who can see the info", customer="The customer who will submit info")
 async def inf_command(interaction: discord.Interaction, worker: discord.Member, customer: discord.Member):
     view = InfoButtonView(customer, worker)

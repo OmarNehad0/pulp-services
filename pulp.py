@@ -1396,9 +1396,10 @@ from discord import TextStyle
 @app_commands.describe(
     order_id="Order ID to complete",
     commission="Server commission % (default 20%)",
+    worker_channel="Channel where the worker should be notified",
     support_agent="Optional: Support agent to take part of helper commission"
 )
-async def complete(interaction: Interaction, order_id: int, support_agent: discord.Member, commission: float = 20.0 ):
+async def complete(interaction: Interaction, order_id: int, support_agent: discord.Member,worker_channel: discord.TextChannel, commission: float = 20.0):
     # Permission check
     if not has_permission(interaction.user):
         await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
@@ -1452,6 +1453,7 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
     # Deduct extra shares from commission
     adjusted_commission = round(commission_total - total_extra, 2)
 
+    worker_wallet_before = get_wallet(worker_id).get("wallet_dollars", 0)
 
     # Update wallets
     update_wallet(customer_id, "spent_dollars", value, "$")
@@ -1466,7 +1468,7 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
         update_wallet(str(pricing_agent_id), "wallet_dollars", pricing_payment, "$")
     if support_agent:
         update_wallet(str(support_agent.id), "wallet_dollars", support_payment, "$")
-
+    worker_wallet_after = get_wallet(worker_id).get("wallet_dollars", 0)
     # Mark order as completed
     orders_collection.update_one({"_id": order_id}, {"$set": {"status": "completed"}})
 
@@ -1595,18 +1597,30 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
         view = FeedbackView()
         await original_channel.send(embed=feedback_embed, view=view)
 
-    # ---------- DM Worker ----------
-    worker = bot.get_user(order["worker"])
-    if worker:
-        dm_embed = Embed(title="✅ Order Completed", color=discord.Color.from_rgb(139, 0, 0))
+    # ---------- Notify Worker ----------
+    worker_member = interaction.guild.get_member(int(worker_id))
+    if worker_member:
+        dm_embed = Embed(
+            title="✅ Order Completed",
+            color=discord.Color.from_rgb(139, 0, 0)
+        )
         dm_embed.add_field(name="📕 Description", value=order.get("description", "No description provided."), inline=False)
-        dm_embed.add_field(name="💰 Value", value=f"**{value}$**", inline=True)
+        dm_embed.add_field(name="💰 Order Value", value=f"**{value}$**", inline=True)
         dm_embed.add_field(name="👷‍♂️ Your Payment", value=f"**{worker_payment}$**", inline=True)
+        dm_embed.add_field(name="💳 Wallet Update", value=(
+            f"Previous Balance: **{worker_wallet_before}$**\n"
+            f"Added: **{worker_payment}$**\n"
+            f"New Balance: **{worker_wallet_after}$**"
+        ), inline=False)
         dm_embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+
         try:
-            await worker.send(embed=dm_embed)
+            if worker_channel:  # use the channel provided in the command
+                await worker_channel.send(f"<@{worker_id}>", embed=dm_embed)
+            else:
+                await worker_member.send(embed=dm_embed)  # fallback to DM
         except discord.Forbidden:
-            print(f"[WARNING] Could not DM worker {worker.id}. DMs may be closed.")
+            print(f"[WARNING] Could not notify worker {worker_id}. DMs may be closed.")
 
     notify_channel = bot.get_channel(1445612754533880001)
     if notify_channel:

@@ -52,7 +52,6 @@ LOG_CHANNEL_ID = 1433919895875092593  # Replace with your actual log channel ID
 class FeedbackModal(Modal):
     def __init__(self, default_stars=5):
         super().__init__(title="Service Feedback")
-
         self.stars_input = TextInput(
             label="Rating (1–5 ⭐)",
             style=TextStyle.short,
@@ -61,7 +60,6 @@ class FeedbackModal(Modal):
             max_length=1,
             required=True
         )
-
         self.review_input = TextInput(
             label="We Appreciate A Detailed Review!",
             style=TextStyle.paragraph,
@@ -69,9 +67,18 @@ class FeedbackModal(Modal):
             required=True,
             max_length=500
         )
+        # Add a TextInput for anonymous option
+        self.anonymous_input = TextInput(
+            label="Post Anonymously? Type YES to hide your name",
+            style=TextStyle.short,
+            placeholder="YES to post anonymously",
+            max_length=3,
+            required=False
+        )
 
         self.add_item(self.stars_input)
         self.add_item(self.review_input)
+        self.add_item(self.anonymous_input)
 
     async def on_submit(self, interaction: Interaction):
         try:
@@ -83,36 +90,31 @@ class FeedbackModal(Modal):
 
         stars_text = "⭐" * stars
         review = self.review_input.value
+        anonymous = self.anonymous_input.value.strip().lower() == "yes"
 
-        embed = discord.Embed(
+        username = "Anonymous" if anonymous else interaction.user.name
+
+        embed = Embed(
             title="🌟 Pulp Vouches! 🌟",
             color=discord.Color.from_rgb(200, 0, 0),
             description=(
                 f"**Date:** `{interaction.created_at.strftime('%B %d, %Y')}`\n"
-                f"**Discord User:** `{interaction.user.name}`\n\n"
+                f"**Discord User:** `{username}`\n\n"
                 f"**Rating:** {stars_text}\n"
                 f"**Vouch:**\n{review}"
             )
         )
+        embed.set_author(name=f"{username} left a vouch!", icon_url=interaction.user.display_avatar.url)
+        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+        embed.set_footer(text="Thank you for your feedback!", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
 
-        embed.set_author(
-            name=f"{interaction.user.name} left a vouch!",
-            icon_url=interaction.user.display_avatar.url
-        )
-        embed.set_thumbnail(
-            url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif"
-        )
-        embed.set_footer(
-            text="Thank you for your feedback!",
-            icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif"
-        )
-
-        channel = interaction.client.get_channel(FEEDBACK_CHANNEL_ID)
-        if channel:
-            await channel.send(embed=embed)
+        feedback_channel = bot.get_channel(FEEDBACK_CHANNEL_ID)
+        if feedback_channel:
+            await feedback_channel.send(embed=embed)
             await interaction.response.send_message("✅ Thank you for your feedback!", ephemeral=True)
         else:
             await interaction.response.send_message("⚠️ Feedback channel not found!", ephemeral=True)
+
 
 
 # ---------- Buttons ----------
@@ -1483,7 +1485,13 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
     # ---------- Original Channel Embed ----------
     original_channel = bot.get_channel(order["original_channel_id"])
     if original_channel:
-        embed = Embed(title="✅ Order Completed", color=discord.Color.from_rgb(139, 0, 0))
+        embed = Embed(title="✅ Order Completed",description=(f"**<@{customer_id}>**\n\n"
+                         "**__🔒 Security Reminder__**\n"
+                         "• **Change your account password**\n"
+                         "• **End All Sessions**\n"
+                         "• **Change your bank PIN** (Optional)\n"
+                         "• **Make sure to reset the backup codes if they were provided.**\n"
+                         "• **For legacy login accounts: Check linked accounts and remove any suspicious connections.**\n"), color=discord.Color.from_rgb(139, 0, 0))
         embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
         embed.set_author(name="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
         embed.add_field(name="📕 Description", value=order.get("description", "No description provided."), inline=False)
@@ -1494,24 +1502,6 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
         embed.set_image(url="https://media.discordapp.net/attachments/1445150831233073223/1445590514127732848/Footer_2.gif")
         embed.set_footer(text=f"📜 Order ID: {order_id}", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
         await original_channel.send(embed=embed)
-
-        # ---------- Security Reminder ----------
-        security = Embed(
-            title="🔒 Security Reminder",
-            description=(f"**<@{customer_id}>**\n\n"
-                         "__Please do the following immediately:__\n"
-                         "• **Change your account password**\n"
-                         "• **End All Sessions**\n"
-                         "• **Change your bank PIN** (Optional)\n"
-                         "• **Make sure to reset the backup codes if they were provided.**\n"
-                         "• **For legacy login accounts: Check linked accounts and remove any suspicious connections.**\n"),
-            color=discord.Color.gold()
-        )
-        security.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
-        security.set_author(name="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
-        security.set_footer(text="Pulp System • Please confirm once done", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
-        security.add_field(name="⚠️ Action Required", value="**This is for your safety. Please confirm here once changed.**", inline=False)
-        await original_channel.send(content=f"<@{customer_id}>", embed=security)
 
         # ---------- Feedback Embed + Buttons ----------
         class FeedbackModal(Modal):
@@ -1532,8 +1522,18 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
                     required=True,
                     max_length=500
                 )
+                # Add a TextInput for anonymous option
+                self.anonymous_input = TextInput(
+                    label="Post Anonymously? Type YES to hide your name",
+                    style=TextStyle.short,
+                    placeholder="YES to post anonymously",
+                    max_length=3,
+                    required=False
+                )
+        
                 self.add_item(self.stars_input)
                 self.add_item(self.review_input)
+                self.add_item(self.anonymous_input)
 
             async def on_submit(self, interaction: Interaction):
                 try:
@@ -1542,28 +1542,34 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
                         stars = 5
                 except:
                     stars = 5
+
                 stars_text = "⭐" * stars
                 review = self.review_input.value
+                anonymous = self.anonymous_input.value.strip().lower() == "yes"
+
+                username = "Anonymous" if anonymous else interaction.user.name
 
                 embed = Embed(
                     title="🌟 Pulp Vouches! 🌟",
                     color=discord.Color.from_rgb(200, 0, 0),
                     description=(
                         f"**Date:** `{interaction.created_at.strftime('%B %d, %Y')}`\n"
-                        f"**Discord User:** `{interaction.user.name}`\n\n"
+                        f"**Discord User:** `{username}`\n\n"
                         f"**Rating:** {stars_text}\n"
                         f"**Vouch:**\n{review}"
                     )
                 )
-                embed.set_author(name=f"{interaction.user.name} left a vouch!", icon_url=interaction.user.display_avatar.url)
+                embed.set_author(name=f"{username} left a vouch!", icon_url=interaction.user.display_avatar.url)
                 embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
                 embed.set_footer(text="Thank you for your feedback!", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+
                 feedback_channel = bot.get_channel(FEEDBACK_CHANNEL_ID)
                 if feedback_channel:
                     await feedback_channel.send(embed=embed)
                     await interaction.response.send_message("✅ Thank you for your feedback!", ephemeral=True)
                 else:
                     await interaction.response.send_message("⚠️ Feedback channel not found!", ephemeral=True)
+
 
         class FeedbackView(View):
             def __init__(self):
@@ -1604,6 +1610,7 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
             title="✅ Order Completed",
             color=discord.Color.from_rgb(139, 0, 0)
         )
+        dm_embed.add_field(name="🆔 Order ID", value=f"`{order_id}`", inline=True)
         dm_embed.add_field(name="📕 Description", value=order.get("description", "No description provided."), inline=False)
         dm_embed.add_field(name="💰 Order Value", value=f"**{value}$**", inline=True)
         dm_embed.add_field(name="👷‍♂️ Your Payment", value=f"**{worker_payment}$**", inline=True)

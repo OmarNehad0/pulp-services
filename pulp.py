@@ -1496,8 +1496,8 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
                          "__Please do the following immediately:__\n"
                          "• **Change your account password**\n"
                          "• **End All Sessions**\n"
-                         "• **Change your bank PIN** (Optional)\n"),
-                         "• **Make sure to reset the backup codes if they were provided.**\n"),
+                         "• **Change your bank PIN** (Optional)\n")
+                         "• **Make sure to reset the backup codes if they were provided.**\n")
                          "• **For legacy login accounts: Check linked accounts and remove any suspicious connections.**\n"),
             color=discord.Color.gold()
         )

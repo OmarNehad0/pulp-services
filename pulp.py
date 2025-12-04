@@ -1282,8 +1282,9 @@ async def process_post_order(
         "posted_by": interaction.user.id
     })
     ticket_channel = interaction.channel
-    ticket_message = await ticket_channel.send(embed=embed)
-    await ticket_message.pin(reason="Auto-pinned order")
+    ticket_msg = await ticket_channel.send(embed=embed)
+    await ticket_msg.pin(reason="Auto-pinned order")
+
     # Confirmation and log
     confirmation_embed = embed.copy()
     confirmation_embed.title = f"✅ {'Order Set' if worker else 'Order Posted Successfully'}"
@@ -1323,6 +1324,7 @@ class OrderDescriptionModal(discord.ui.Modal, title="Order Description"):
         self.worker = worker
 
     async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         await process_post_order(
             interaction,
             self.customer,

@@ -1182,59 +1182,56 @@ async def process_post_order(
     image: str = None,
     worker: discord.Member = None
 ):
-    # Get customer funds
     wallet_data = get_wallet(str(customer.id))
     available_funds = wallet_data.get("wallet_dollars", 0) + wallet_data.get("deposit_dollars", 0)
 
     if available_funds < value:
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"⚠️ {customer.mention} only has **{available_funds}$**, but this order costs **{value}$**. Please top up your wallet.",
             ephemeral=True
         )
         return
 
-    # Deduct order value from customer
     update_wallet(str(customer.id), "wallet_dollars", -value, "$")
     update_wallet(str(customer.id), "spent_dollars", value, "$")
 
-    # Default channel
     if not channel:
         channel = interaction.guild.get_channel(1433919267711094845)
 
-    # Format numbers
     formatted_value = f"{value:,.2f}$"
     formatted_deposit = f"{deposit_required:,.2f}$"
 
-    # Create embed
-    embed = discord.Embed(title="New Order", color=discord.Color.from_rgb(139, 0, 0))
+    order_id = get_next_order_id()
+    original_channel_id = interaction.channel.id
+
+    # Embed
+    embed = discord.Embed(
+        title=f"💼 {'Order Set' if worker else 'New Order'} | ID: {order_id}",
+        color=discord.Color.from_rgb(139, 0, 0)
+    )
     embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
-    embed.set_author(name="💼 Order Posted", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+    embed.set_author(name="💼 Order Details", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
     embed.description = f"📕 **Description:**\n{description}"
     embed.add_field(name="💰 Value", value=f"**```{formatted_value}```**", inline=True)
     embed.add_field(name="💵 Deposit Required", value=f"**```{formatted_deposit}```**", inline=True)
     embed.add_field(name="🕵️‍♂️ Holder", value=holder.mention, inline=True)
     embed.set_image(url=image if image else "https://media.discordapp.net/attachments/1445150831233073223/1445590514127732848/Footer_2.gif")
+    embed.set_footer(text=f"Order ID: {order_id}", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
 
-    order_id = get_next_order_id()
-    original_channel_id = interaction.channel.id
-
-    # ---------------- If worker assigned ----------------
+    # If worker assigned
     if worker:
         skip_deposit = discord.utils.get(worker.roles, id=1434981057962446919) is not None
-
         if not skip_deposit:
             worker_wallet = get_wallet(str(worker.id))
-            worker_deposit = worker_wallet.get("deposit_dollars", 0)
-            if worker_deposit < deposit_required:
-                await interaction.response.send_message(
-                    f"⚠️ {worker.display_name} does not have enough deposit. Required: {formatted_deposit}, Available: {worker_deposit}$",
+            if worker_wallet.get("deposit_dollars", 0) < deposit_required:
+                await interaction.followup.send(
+                    f"⚠️ {worker.display_name} does not have enough deposit. Required: {formatted_deposit}",
                     ephemeral=True
                 )
                 return
 
         message = await channel.send(embed=embed)
         await message.pin(reason="Auto-pinned order")
-
         orders_collection.insert_one({
             "_id": order_id,
             "customer": customer.id,
@@ -1252,23 +1249,20 @@ async def process_post_order(
             "posted_by": interaction.user.id
         })
 
-        # Update wallets
         update_wallet(str(customer.id), "spent_dollars", deposit_required, "$")
         if not skip_deposit:
             update_wallet(str(worker.id), "wallet_dollars", round(deposit_required * 0.85, 2), "$")
 
         await channel.set_permissions(worker, read_messages=True, send_messages=True)
-        await interaction.response.send_message(f"✅ Order assigned directly to {worker.mention}!", ephemeral=True)
+        await interaction.followup.send(f"✅ Order assigned directly to {worker.mention}!", ephemeral=True)
         return
 
-    # ---------------- Normal post (no worker) ----------------
+    # Normal post (no worker)
     role_ping = None
     role1 = discord.utils.get(interaction.guild.roles, id=1433500886721757215)
     role2 = discord.utils.get(interaction.guild.roles, id=1208792946401615902)
-    if role1:
-        role_ping = role1.mention
-    elif role2:
-        role_ping = role2.mention
+    if role1: role_ping = role1.mention
+    elif role2: role_ping = role2.mention
 
     message = await channel.send(f"{role_ping}" if role_ping else None, embed=embed)
     await message.edit(view=OrderButton(order_id, deposit_required, customer.id, original_channel_id, message.id, channel.id))
@@ -1291,10 +1285,8 @@ async def process_post_order(
 
     # Confirmation and log
     confirmation_embed = embed.copy()
-    confirmation_embed.title = "✅ Order Posted Successfully"
-    await interaction.channel.send(embed=confirmation_embed)
-    await interaction.response.send_message("💵 Order posted successfully in USD!", ephemeral=True)
-
+    confirmation_embed.title = f"✅ {'Order Set' if worker else 'Order Posted Successfully'}"
+    await interaction.followup.send(embed=confirmation_embed)
     await log_command(
         interaction,
         "Order Posted",

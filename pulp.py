@@ -1689,7 +1689,6 @@ async def order_cancel(interaction: Interaction, order_id: int):
         f"💸 **Order Cancelled**\n"
         f"Order ID: `{order_id}`\n"
         f"Customer Refunded: **{value}$**\n"
-        + (f"Worker Deposit Refunded: **{deposit_required}$**\n" if worker_id else "")
         + f"Cancelled by: {interaction.user.mention} (`{interaction.user.id}`)"
     )
 

@@ -139,10 +139,9 @@ async def request_review(interaction: Interaction, user: discord.Member):
             f"👋 Hey {user.mention},\n"
             "**We hope you had a great experience with us.**\n\n"
             "**If you're happy with our service, we would truly appreciate it if you could leave us a review using the buttons below.**\n\n"
-            "**✨ +10% Discount When You Leave A Vouch!**\n"
-            "**🔗 Check Discounts Here:** <#1433917514412462090>\n\n"
-            "**Please select your rating below.**\n"
-            "You can also change the star amount inside the popup."
+            "**✨ Leave your vouch on Sythe and Trustpilot to unlock an exclusive 10% discount on your next order.**\n"
+            "**🔗 Stay tuned for our latest offers and exclusive discounts via:** <#1433917514412462090>\n\n"
+            "**Once pressed, a pop-up will appear allowing you to write your Discord review and select a rating from 1 to 5, or it will redirect you to Sythe or Trustpilot.**\n"
         )
     )
 
@@ -389,6 +388,7 @@ db = client['MongoDB_pulp_server']  # Replace with the name of your database
 wallets_collection = db['wallets']
 orders_collection = db['orders']
 counters_collection = db["order_counters"]  # New collection to track order ID
+worker_channels_collection = db["worker_channels"]
 
 
 # The fixed orders posting channel
@@ -1078,22 +1078,21 @@ class ApplicationView(View):
                 return
 
             # Embed for claimed order (same style as before)
-            embed = discord.Embed(title="👷‍♂️ Order Claimed", color=discord.Color.from_rgb(139, 0, 0))
+            embed = discord.Embed(title=f"👷‍♂️ Order Claimed | ID: {order_id}", color=discord.Color.from_rgb(139, 0, 0))
             embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
-            embed.set_author(name="✅ Pulp System ✅", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+            embed.set_author(name="✨ Pulp System ✨", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
             embed.add_field(name="📕 Description", value=description, inline=False)
             embed.add_field(name="👷 Worker", value=f"<@{self.applicant_id}>", inline=True)
             embed.add_field(name="📌 Customer", value=f"<@{self.customer_id}>", inline=True)
             embed.add_field(name="💵 Deposit Required", value=f"**```{deposit_required}$```**", inline=True)
             embed.add_field(name="💰 Order Value", value=f"**```{value}$```**", inline=True)
-            embed.add_field(name="🆔 Order ID", value=self.order_id, inline=True)
             embed.set_image(url="https://media.discordapp.net/attachments/1445150831233073223/1445590514127732848/Footer_2.gif")
             embed.set_footer(text="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
             sent_message = await original_channel.send(embed=embed)
             await sent_message.pin()
 
             # Notify customer and worker
-            claim_message = f"**Hello! <@{self.customer_id}>, <@{self.applicant_id}> is Assigned To Be Your Worker For This Job. You Can Provide Your Account Info Using This Command `/inf`**"
+            claim_message = f"**Hello! <@{self.customer_id}>, <@{self.applicant_id}> is Assigned To Be Your Worker For This Job. You Can Provide Your Account Info Using This Command `/submit-details`**"
             await original_channel.send(claim_message)
 
         # Delete original post
@@ -1207,10 +1206,8 @@ async def process_post_order(
     color=discord.Color.from_rgb(139, 0, 0)
     )
     embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
-    embed.set_author(name="💼 Order Details", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
-    embed.description = f"📕 **Description:**\n{description}"
-    embed.add_field(name="💰 Value", value=f"**```{formatted_value}```**", inline=True)
-    embed.add_field(name="💵 Deposit Required", value=f"**```{formatted_deposit}```**", inline=True)
+    embed.set_author(name="💼 Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
+    embed.add_field(text="A suitable worker for the job will be assigned when your order is accepted.")
 
     # Add holder and/or worker
     if worker:
@@ -1309,8 +1306,7 @@ class OrderDescriptionModal(discord.ui.Modal, title="Order Description"):
         placeholder="Enter all order details here...",
         style=discord.TextStyle.long,
         required=True,
-        max_length=1000,
-        default="Default description..."
+        max_length=1000
     )
 
     def __init__(self, interaction, customer, pricing_agent, value, deposit_required, holder, channel, image, worker):
@@ -1382,15 +1378,38 @@ async def post(
 
 
 FEEDBACK_CHANNEL_ID= 1433532064753389629
+
+
+@bot.tree.command(name="set-completed-logs", description="Set where a worker gets order completion notifications.")
+@app_commands.describe(user="Worker", channel="Channel for their logs")
+async def set_completed_logs(interaction: Interaction, user: discord.Member, channel: discord.TextChannel):
+
+    # Permission check (optional)
+    if not has_permission(interaction.user):
+        await interaction.response.send_message("❌ You don't have permission.", ephemeral=True)
+        return
+
+    worker_channels_collection.update_one(
+        {"_id": str(user.id)},
+        {"$set": {"channel_id": channel.id}},
+        upsert=True
+    )
+
+    await interaction.response.send_message(
+        f"✅ Saved completed-orders channel for **{user.mention}** → {channel.mention}",
+        ephemeral=True
+    )
+
+
 from discord import TextStyle
 @bot.tree.command(name="complete", description="Mark an order as completed (USD only).")
 @app_commands.describe(
     order_id="Order ID to complete",
-    commission="Server commission % (default 20%)",
-    worker_channel="Channel where the worker should be notified",
-    support_agent="Optional: Support agent to take part of helper commission"
+    support_agent="Support agent to take part of helper commission",    
+    commission="Server commission % (default 20%)"
+
 )
-async def complete(interaction: Interaction, order_id: int, support_agent: discord.Member,worker_channel: discord.TextChannel, commission: float = 20.0):
+async def complete(interaction: Interaction, order_id: int, support_agent: discord.Member, commission: float = 20.0):
     # Permission check
     if not has_permission(interaction.user):
         await interaction.response.send_message("❌ You don't have permission to use this command.")
@@ -1474,7 +1493,7 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
     # ---------- Original Channel Embed ----------
     original_channel = bot.get_channel(order["original_channel_id"])
     if original_channel:
-        embed = Embed(title="✅ Order Completed",description=(f"**<@{customer_id}>**\n\n"
+        embed = Embed(title=f"✅ Order Completed | ID: {order_id}",description=(f"**<@{customer_id}>**\n\n"
                          "**__🔒 Security Reminder__**\n"
                          "• **Change your account password**\n"
                          "• **End All Sessions**\n"
@@ -1574,11 +1593,10 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
             title="📝 Vouch For Us!",
             color=discord.Color.from_rgb(200, 0, 0),
             description=(
-                "**We Appreciate Your Vouch on [Sythe](https://www.sythe.org/threads/pulp-services-vouch-thread/).**\n"
-                "✨ **Get a +10% Discount** When You Vouch.\n"
-                "**Check Discounts Here.** <#1433917514412462090> \n\n"
-                "**Please select your rating below.**\n"
-                "Once Selected, You Will Be Asked To Leave A Review."
+                "**✨ Leave your vouch on Sythe and Trustpilot to unlock an exclusive 10% discount on your next order.**\n"
+                "**Your support means a lot and lets us reward you even more.**\n"
+                "**Stay tuned for our latest offers and exclusive discounts via:** <#1433917514412462090> \n\n"
+                "**Once pressed, a pop-up will appear allowing you to write your Discord review and select a rating from 1 to 5, or it will redirect you to Sythe or Trustpilot.**\n"
             )
         )
         feedback_embed.set_author(name="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
@@ -1592,10 +1610,9 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
     worker_member = interaction.guild.get_member(int(worker_id))
     if worker_member:
         dm_embed = Embed(
-            title="✅ Order Completed",
+            title=f"✅ Order Completed Order ID | {order_id}",
             color=discord.Color.from_rgb(139, 0, 0)
         )
-        dm_embed.add_field(name="🆔 Order ID", value=f"`{order_id}`", inline=True)
         dm_embed.add_field(name="📕 Description", value=order.get("description", "No description provided."), inline=False)
         dm_embed.add_field(name="💰 Order Value", value=f"**{value}$**", inline=True)
         dm_embed.add_field(name="👷‍♂️ Your Payment", value=f"**{worker_payment}$**", inline=True)
@@ -1607,10 +1624,21 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
         dm_embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
 
         try:
-            if worker_channel:  # use the channel provided in the command
-                await worker_channel.send(f"<@{worker_id}>", embed=dm_embed)
-            else:
-                await worker_member.send(embed=dm_embed)  # fallback to DM
+            # Fetch worker's saved channel
+            worker_entry = worker_channels_collection.find_one({"_id": str(worker_id)})
+
+            saved_channel = None
+            if worker_entry:
+                saved_channel = bot.get_channel(worker_entry.get("channel_id"))
+
+            try:
+                if saved_channel:
+                    await saved_channel.send(f"<@{worker_id}>", embed=dm_embed)
+                else:
+                    await worker_member.send(embed=dm_embed)
+            except discord.Forbidden:
+                print(f"[WARNING] Could not notify worker {worker_id}.")
+
         except discord.Forbidden:
             print(f"[WARNING] Could not notify worker {worker_id}. DMs may be closed.")
 
@@ -1618,14 +1646,12 @@ async def complete(interaction: Interaction, order_id: int, support_agent: disco
     if notify_channel:
         # Only include pricing_agent and support_agent in this embed
         embed = discord.Embed(
-            title=f"🎯 Agents Commission Summary",
+            title=f"🎯 Agents Commission Summary Order ID | {order_id}",
             color=discord.Color.gold()
         )
         embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
         embed.set_author(name="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
         embed.set_footer(text="Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
-
-        embed.add_field(name="📜 Order ID", value=f"`{order_id}`", inline=True)
         embed.add_field(name="💰 Order Value", value=f"**```{value}$```**", inline=True)
 
         if pricing_agent_id and pricing_payment > 0:

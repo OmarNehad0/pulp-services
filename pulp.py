@@ -1207,7 +1207,13 @@ async def process_post_order(
     )
     embed.set_thumbnail(url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
     embed.set_author(name="💼 Pulp System", icon_url="https://media.discordapp.net/attachments/1445150831233073223/1445590515256000572/Profile.gif")
-    embed.add_field(text="A suitable worker for the job will be assigned when your order is accepted.")
+    
+    embed.add_field(
+        name="\u200b",
+        value="A suitable worker for the job will be assigned when your order is accepted.",
+        inline=False
+    )
+
 
     # Add holder and/or worker
     if worker:
